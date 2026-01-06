@@ -52,6 +52,20 @@
           }
         ]
       }
+    ],
+    "metadata": [
+      {
+        "name": "ohos.module.syscap.optional",
+        "value": "[\"SystemCapability.Communication.Bluetooth.Core\",\"SystemCapability.HiviewDFX.HiDumper\",\"SystemCapability.DistributedHardware.DeviceManager\"]"
+      },
+      {
+        "name": "ohos.module.syscap.optional",
+        "value": "[\"SystemCapability.Multimedia.Drm.Core\",\"SystemCapability.Advertising.Ads\"]"
+      },
+      {
+        "name": "ohos.module.syscap.optional",
+        "value": "[\"SystemCapability.Security.DeviceAuth\",\"SystemCapability.Customization.EnterpriseDeviceManager\"]"
+      }
     ]
   }
 }

@@ -27,12 +27,12 @@
         //Specify the target version of OpenHarmony for the application/service. If not set, it defaults to compatibleSdkVersion.
         "targetSdkVersion": 11,
         //Specify OpenHarmony as the target platform.
-        "runtimeOS": "OpenHarmony",
+        "runtimeOS": "OpenHarmony"
       }
     ],
     "buildModeSet": [
       {
-        "name": "debug",
+        "name": "debug"
       },
       {
         "name": "release"
