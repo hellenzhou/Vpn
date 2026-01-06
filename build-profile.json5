@@ -15,7 +15,21 @@
 
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPN_Bq8qv_jCfHHV4WpuDwv1bcpxq8bdBX8yuT26tk8NMXg=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B274EBDFBA200117E774E12853F019C688F562F60641615033E6ADCBAD82858F35E594D81EE80CB",
+          "profile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPN_Bq8qv_jCfHHV4WpuDwv1bcpxq8bdBX8yuT26tk8NMXg=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPN_Bq8qv_jCfHHV4WpuDwv1bcpxq8bdBX8yuT26tk8NMXg=.p12",
+          "storePassword": "0000001BB53EAF695D1E80013102496B8868AD4E263E91C632373CC6640F05F6AF90650CBD74ED8368444C"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
