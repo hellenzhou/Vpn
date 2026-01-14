@@ -156,6 +156,31 @@ export default struct allNetworksBtn {
 
     let vpnConfig = new Config(tunIp, blockedAppName);
 
+    // 🔍 诊断日志：输出VPN配置详情
+    hilog.info(0x0000, 'ZBQ', '[UI] 🔍🔍🔍 VPN配置诊断 🔍🔍🔍');
+    hilog.info(0x0000, 'ZBQ', '[UI] 📋 trustedApplications (这些应用绕过VPN):');
+    vpnConfig.trustedApplications.forEach((app, index) => {
+      hilog.info(0x0000, 'ZBQ', '[UI]   %{public}d. %{public}s', index + 1, app);
+    });
+    hilog.info(0x0000, 'ZBQ', '[UI] 📋 blockedApplications (这些应用走VPN):');
+    if (vpnConfig.blockedApplications.length === 0) {
+      hilog.info(0x0000, 'ZBQ', '[UI]   ✅ 空数组 - 所有应用走VPN（除了trustedApplications）');
+    } else {
+      vpnConfig.blockedApplications.forEach((app, index) => {
+        hilog.info(0x0000, 'ZBQ', '[UI]   %{public}d. %{public}s', index + 1, app);
+      });
+    }
+    hilog.info(0x0000, 'ZBQ', '[UI] 📋 routes配置:');
+    vpnConfig.routes.forEach((route, index) => {
+      hilog.info(0x0000, 'ZBQ', '[UI]   Route %{public}d:', index + 1);
+      hilog.info(0x0000, 'ZBQ', '[UI]     - interface: %{public}s', route.interface);
+      hilog.info(0x0000, 'ZBQ', '[UI]     - destination: %{public}s/%{public}d', 
+        route.destination.address.address, route.destination.prefixLength);
+      hilog.info(0x0000, 'ZBQ', '[UI]     - gateway: %{public}s', route.gateway.address);
+      hilog.info(0x0000, 'ZBQ', '[UI]     - isDefaultRoute: %{public}s', route.isDefaultRoute ? 'true' : 'false');
+    });
+    hilog.info(0x0000, 'ZBQ', '[UI] 🔍🔍🔍 VPN配置诊断结束 🔍🔍🔍');
+
     // [Start vpn_config_parameters]
     // ⚠️ 检查扩展能力是否已经创建了VPN连接
     if (gTunFd >= 0) {
