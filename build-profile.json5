@@ -1,47 +1,37 @@
 /*
-* Copyright (c) 2023 Huawei Device Co., Ltd.
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-  *
-  *     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * Copyright (c) 2025 Huawei Device Co., Ltd.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 {
   "app": {
-    "signingConfigs": [
-      {
-        "name": "default",
-        "type": "HarmonyOS",
-        "material": {
-          "certpath": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPN_Bq8qv_jCfHHV4WpuDwv1bcpxq8bdBX8yuT26tk8NMXg=.cer",
-          "keyAlias": "debugKey",
-          "keyPassword": "0000001B274EBDFBA200117E774E12853F019C688F562F60641615033E6ADCBAD82858F35E594D81EE80CB",
-          "profile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPN_Bq8qv_jCfHHV4WpuDwv1bcpxq8bdBX8yuT26tk8NMXg=.p7b",
-          "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPN_Bq8qv_jCfHHV4WpuDwv1bcpxq8bdBX8yuT26tk8NMXg=.p12",
-          "storePassword": "0000001BB53EAF695D1E80013102496B8868AD4E263E91C632373CC6640F05F6AF90650CBD74ED8368444C"
-        }
-      }
-    ],
     "products": [
       {
         "name": "default",
         "signingConfig": "default",
-        //Specify the version of OpenHarmony application/service to be used during compilation.
-        "compileSdkVersion": 11,
-        //Specify the minimum version of OpenHarmony that the application/service is compatible with.
-        "compatibleSdkVersion": 11,
-        //Specify the target version of OpenHarmony for the application/service. If not set, it defaults to compatibleSdkVersion.
-        "targetSdkVersion": 11,
-        //Specify OpenHarmony as the target platform.
-        "runtimeOS": "OpenHarmony"
+        "compileSdkVersion": 20,
+        "targetSdkVersion": 20,
+        "compatibleSdkVersion": 20,
+        "runtimeOS": "OpenHarmony",
+        "buildOption": {
+          "externalNativeOptions": {
+            "abiFilters": [
+              "arm64-v8a",
+              "x86_64",
+              "armeabi-v7a"
+            ]
+          }
+        }
       }
     ],
     "buildModeSet": [
@@ -50,6 +40,21 @@
       },
       {
         "name": "release"
+      }
+    ],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPNControl_Case_8LQEbPCRfo0Z6o8J0pzPDxbpxaUtWwemmqeJGXVTVyk=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001A218A3CA7A67F7FEB065F048178ACA9AF841E7F464C81E026B37DC9A4422A71968D22153B13E3",
+          "profile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPNControl_Case_8LQEbPCRfo0Z6o8J0pzPDxbpxaUtWwemmqeJGXVTVyk=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPNControl_Case_8LQEbPCRfo0Z6o8J0pzPDxbpxaUtWwemmqeJGXVTVyk=.p12",
+          "storePassword": "0000001A5040B54CA748D2C1AD48839D8BA23993DDA640E6D8F61BE3EA6178BBF494CEFA7AEEB86B381D"
+        }
       }
     ]
   },

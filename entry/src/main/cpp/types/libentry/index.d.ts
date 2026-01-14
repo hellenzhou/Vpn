@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Huawei Device Co., Ltd.
+ * Copyright (c) 2025 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,8 +13,7 @@
  * limitations under the License.
  */
 
-export const tcpConnect: (addr: string, port: number) => number;
-
-export const startVpn: (tunFd: number, tunnelFd: number) => number;
-
-export const stopVpn: (tunnelFd: number) => number;
+export const udpConnect:(addr:string,port:number)=>number;
+export const startVpn:(tunFd:number,tunnelFd:number)=>number;
+export const stopVpn:(tunnelFd:number)=>number;
+export const sendTestData:(tunFd:number,data:Uint8Array)=>number;

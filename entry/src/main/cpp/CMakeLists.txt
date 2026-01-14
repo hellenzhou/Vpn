@@ -1,21 +1,15 @@
-# Set the minimum required version of CMake to 3.4.1
-cmake_minimum_required(VERSION 3.4.1)
+# the minimum version of CMake.
+cmake_minimum_required(VERSION 3.5.0)
+project(VPNControl_Case)
 
-# set the project name as "XComponent"
-project(XComponent)
-
-# Define the variable NATIVERENDER_ROOT_PATH as the root path of the current source code
 set(NATIVERENDER_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Add the header file path to the project
-include_directories(
-    ${NATIVERENDER_ROOT_PATH}
-    ${NATIVERENDER_ROOT_PATH}/include
-)
+if(DEFINED PACKAGE_FIND_FILE)
+    include(${PACKAGE_FIND_FILE})
+endif()
 
-# Build the shared library vpn_client and add the source code file vpn_client.cpp
-add_library(vpn_client SHARED vpn_client.cpp)
+include_directories(${NATIVERENDER_ROOT_PATH}
+                    ${NATIVERENDER_ROOT_PATH}/include)
 
-# Link two library files into the vpn_client library
-target_link_libraries(vpn_client PUBLIC libace_napi.z.so libc++.a)
-target_link_libraries(vpn_client PUBLIC libhilog_ndk.z.so)
+add_library(entry SHARED napi_init.cpp)
+target_link_libraries(entry PUBLIC libace_napi.z.so libhilog_ndk.z.so)

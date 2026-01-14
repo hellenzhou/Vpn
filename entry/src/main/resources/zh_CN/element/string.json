@@ -10,23 +10,79 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "VPN"
+      "value": "VPN示例"
     },
     {
-      "name": "btn_create_tunnel",
+      "name": "VPNExtensionAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "VPNExtensionAbility_label",
+      "value": "label"
+    },
+    {
+      "name": "VPN_Case",
+      "value": "VPN示例"
+    },
+    {
+      "name": "Certain",
+      "value": "确定"
+    },
+    {
+      "name": "notification_content",
+      "value": "通知内容"
+    },
+    {
+      "name": "notification_additional",
+      "value": "通知附加内容"
+    },
+    {
+      "name": "vpn_clickable_notification",
+      "value": "VPN连接成功"
+    },
+    {
+      "name": "vpn_clickable_information",
+      "value": "连接时长: 00:00 网络速度: 50 KB/s"
+    },
+    {
+      "name": "Allow",
+      "value": "允许"
+    },
+    {
+      "name": "Start_VPN",
+      "value": "启动接口"
+    },
+    {
+      "name": "Stop_VPN",
+      "value": "关闭接口"
+    },
+    {
+      "name": "CreateTunnel",
       "value": "创建隧道"
     },
     {
-      "name": "btn_protect",
-      "value": "隧道保护"
+      "name": "Protect",
+      "value": "保护隧道"
     },
     {
-      "name": "btn_start_vpn",
-      "value": "启动vpn"
+      "name": "start_vpnExt",
+      "value": "启动VPN拓展程序"
     },
     {
-      "name": "btn_start_vpnExt",
-      "value": "启动vpnExt"
+      "name": "SetupVpn",
+      "value": "启动VPN"
+    },
+    {
+      "name": "stop_vpn",
+      "value": "关闭VPN"
+    },
+    {
+      "name": "stop_vpnExt",
+      "value": "关闭VPN拓展程序"
+    },
+    {
+      "name": "grant_internet",
+      "value": "网络使用权限"
     }
   ]
 }
