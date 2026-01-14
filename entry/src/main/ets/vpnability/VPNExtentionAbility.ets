@@ -286,10 +286,11 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // 这样除了trustedApplications中的应用外，所有其他应用都必须走VPN隧道
         this.blockedApplications = [];  // 空数组 = 所有应用走VPN（除了trustedApplications）
         
-        // ⚠️⚠️⚠️ 关键配置：IPv4 和 IPv6 默认路由 ⚠️⚠️⚠️
+        // 🔥 激进路由配置：强制所有流量通过VPN
         this.routes = [
+          // IPv4 默认路由 - 捕获所有IPv4流量
           {
-            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
+            interface: 'tun0',
             destination: {
               address: new Address('0.0.0.0', 1),  // IPv4 默认路由
               prefixLength: 0,
@@ -303,8 +304,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             hasGateway: true,
             isDefaultRoute: true
           },
+          // IPv6 默认路由 - 捕获所有IPv6流量
           {
-            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
+            interface: 'tun0',
             destination: {
               address: new Address('::', 2),  // IPv6 默认路由
               prefixLength: 0,
@@ -317,6 +319,22 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             },
             hasGateway: true,
             isDefaultRoute: true
+          },
+          // 🔥 强制DNS路由 - 捕获所有DNS查询
+          {
+            interface: 'tun0',
+            destination: {
+              address: new Address('0.0.0.0', 1),  // 所有IPv4 DNS
+              prefixLength: 0,
+              port: 53  // DNS端口
+            },
+            gateway: {
+              address: '192.168.100.1',
+              family: 1,
+              port: 0
+            },
+            hasGateway: true,
+            isDefaultRoute: false
           }
         ];
       }

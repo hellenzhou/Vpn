@@ -128,6 +128,7 @@ export default struct allNetworksBtn {
         // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
         // 这样所有网络流量（包括DNS）都必须走VPN隧道
         this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
+        
         // ⚠️ 重要：将VPN Proxy Server添加到信任列表，避免路由循环
         // VPN Proxy Server需要直接访问真实网络来转发流量
         this.trustedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器需要排除在VPN路由之外
@@ -138,10 +139,11 @@ export default struct allNetworksBtn {
         // 这样除了trustedApplications中的应用外，所有其他应用都必须走VPN隧道
         this.blockedApplications = [];  // 空数组 = 所有应用走VPN（除了trustedApplications）
 
-        // 配置路由：IPv4 和 IPv6 默认路由
+        // 🔥 激进路由配置：强制所有流量通过VPN
         this.routes = [
+          // IPv4 默认路由 - 捕获所有IPv4流量
           {
-            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
+            interface: 'tun0',
             destination: {
               address: new Address('0.0.0.0', 1),  // IPv4 默认路由
               prefixLength: 0,
@@ -155,8 +157,9 @@ export default struct allNetworksBtn {
             hasGateway: true,
             isDefaultRoute: true
           },
+          // IPv6 默认路由 - 捕获所有IPv6流量
           {
-            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
+            interface: 'tun0',
             destination: {
               address: new Address('::', 2),  // IPv6 默认路由
               prefixLength: 0,
@@ -169,6 +172,22 @@ export default struct allNetworksBtn {
             },
             hasGateway: true,
             isDefaultRoute: true
+          },
+          // 🔥 强制DNS路由 - 捕获所有DNS查询
+          {
+            interface: 'tun0',
+            destination: {
+              address: new Address('0.0.0.0', 1),  // 所有IPv4 DNS
+              prefixLength: 0,
+              port: 53  // DNS端口
+            },
+            gateway: {
+              address: '192.168.100.1',
+              family: 1,
+              port: 0
+            },
+            hasGateway: true,
+            isDefaultRoute: false
           }
         ];
       }

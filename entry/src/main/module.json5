@@ -78,7 +78,8 @@
         "reason": "$string:grant_internet",
         "usedScene": {
           "abilities": [
-            "MainAbility"
+            "EntryAbility",
+            "MyVpnExtAbility"
           ],
           "when": "inuse"
         }
@@ -88,6 +89,7 @@
         "reason": "$string:grant_network_info",
         "usedScene": {
           "abilities": [
+            "EntryAbility",
             "MyVpnExtAbility"
           ],
           "when": "inuse"
@@ -98,6 +100,18 @@
         "reason": "$string:grant_network_info",
         "usedScene": {
           "abilities": [
+            "EntryAbility",
+            "MyVpnExtAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.APPROXIMATELY_LOCATION",
+        "reason": "$string:grant_location",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility",
             "MyVpnExtAbility"
           ],
           "when": "inuse"
