@@ -129,7 +129,9 @@ export default struct allNetworksBtn {
         // ⚠️ 重要：将VPN Proxy Server添加到信任列表，避免路由循环
         // VPN Proxy Server需要直接访问真实网络来转发流量
         this.trustedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器需要排除在VPN路由之外
-        this.blockedApplications = [blockedAppName];  // 被阻止的应用是传入的 `blockedAppName`
+        // ⚠️⚠️⚠️ 关键修复：空数组表示所有应用都走VPN（除了trustedApplications）⚠️⚠️⚠️
+        // 如果填入特定应用，则只有那些应用走VPN，其他应用直接访问网络！
+        this.blockedApplications = [];  // 所有应用走VPN（除了trustedApplications中的）
 
         // 配置路由：默认路由，所有IPv4流量通过VPN
         this.routes = [

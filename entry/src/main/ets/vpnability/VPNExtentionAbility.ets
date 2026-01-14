@@ -261,21 +261,46 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
 
     class Config {
       public addresses: AddressWithPrefix[];
+      public mtu: number;
       public dnsAddresses: string[];
       public trustedApplications: string[];
       public blockedApplications: string[];
+      public routes: RouteConfig[];
       constructor(
         tunIp: string,
         blockedAppName: string
       ) {
         this.addresses = [
-          new AddressWithPrefix(new Address(tunIp, 1), 24)
+          new AddressWithPrefix(new Address(tunIp, 1), 24), // IPv4地址
+          new AddressWithPrefix(new Address('::1', 2), 128)  // IPv6地址
         ];
+        this.mtu = 1400;
         this.dnsAddresses = ['114.114.114.114']; // 通用DNS地址
         // ⚠️ 重要：将VPN Proxy Server添加到信任列表，避免路由循环
         // VPN Proxy Server需要直接访问真实网络来转发流量
         this.trustedApplications = ['com.hellen.vpnserver'];
-        this.blockedApplications = [];
+        // ⚠️⚠️⚠️ 关键修复：空数组表示所有应用都走VPN（除了trustedApplications）⚠️⚠️⚠️
+        this.blockedApplications = [];  // 所有应用走VPN（除了trustedApplications中的）
+        
+        // ⚠️⚠️⚠️ 关键配置：默认路由，将所有IPv4流量路由到VPN ⚠️⚠️⚠️
+        // 如果不配置这个路由，VPN路由表不会生效，流量不会走VPN！
+        this.routes = [
+          {
+            interface: 'vpn-tun',  // 虚拟接口名称（通过VPN隧道通信的接口）
+            destination: {
+              address: new Address('0.0.0.0', 1),  // 所有IPv4地址（默认路由）
+              prefixLength: 0,  // 0表示匹配所有地址
+              port: 0  // 目标端口
+            },
+            gateway: {
+              address: '192.168.100.1',  // VPN网关地址（必须是192.168.100.1）
+              family: 1,  // 地址族（IPv4）
+              port: 0  // 网关端口
+            },
+            hasGateway: true,  // 该路由有网关
+            isDefaultRoute: true  // 该路由是默认路由 - 这会让所有流量走VPN
+          }
+        ];
       }
     }
 
