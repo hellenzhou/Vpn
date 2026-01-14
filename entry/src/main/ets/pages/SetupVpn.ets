@@ -119,10 +119,9 @@ export default struct allNetworksBtn {
         tunIp: string,
         blockedAppName: string
       ) {
-        // 配置 IPv4 和 IPv6 地址
+        // 配置 IPv4 地址 - 禁用IPv6来强制流量通过VPN
         this.addresses = [
-          new AddressWithPrefix(new Address(tunIp, 1), 24),   // IPv4
-          new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
+          new AddressWithPrefix(new Address(tunIp, 1), 24)   // 只使用IPv4
         ];
         this.mtu = 1400;
         // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
@@ -139,7 +138,7 @@ export default struct allNetworksBtn {
         // 这样除了trustedApplications中的应用外，所有其他应用都必须走VPN隧道
         this.blockedApplications = [];  // 空数组 = 所有应用走VPN（除了trustedApplications）
 
-        // 🔥 激进路由配置：强制所有流量通过VPN
+        // 🔥 激进路由配置：只使用IPv4强制所有流量通过VPN
         this.routes = [
           // IPv4 默认路由 - 捕获所有IPv4流量
           {
@@ -152,22 +151,6 @@ export default struct allNetworksBtn {
             gateway: {
               address: '192.168.100.1',
               family: 1,  // IPv4
-              port: 0
-            },
-            hasGateway: true,
-            isDefaultRoute: true
-          },
-          // IPv6 默认路由 - 捕获所有IPv6流量
-          {
-            interface: 'tun0',
-            destination: {
-              address: new Address('::', 2),  // IPv6 默认路由
-              prefixLength: 0,
-              port: 0
-            },
-            gateway: {
-              address: '::1',
-              family: 2,  // IPv6
               port: 0
             },
             hasGateway: true,

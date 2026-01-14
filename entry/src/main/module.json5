@@ -78,41 +78,7 @@
         "reason": "$string:grant_internet",
         "usedScene": {
           "abilities": [
-            "EntryAbility",
-            "MyVpnExtAbility"
-          ],
-          "when": "inuse"
-        }
-      },
-      {
-        "name": "ohos.permission.GET_NETWORK_INFO",
-        "reason": "$string:grant_network_info",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility",
-            "MyVpnExtAbility"
-          ],
-          "when": "inuse"
-        }
-      },
-      {
-        "name": "ohos.permission.SET_NETWORK_INFO",
-        "reason": "$string:grant_network_info",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility",
-            "MyVpnExtAbility"
-          ],
-          "when": "inuse"
-        }
-      },
-      {
-        "name": "ohos.permission.APPROXIMATELY_LOCATION",
-        "reason": "$string:grant_location",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility",
-            "MyVpnExtAbility"
+            "EntryAbility"
           ],
           "when": "inuse"
         }

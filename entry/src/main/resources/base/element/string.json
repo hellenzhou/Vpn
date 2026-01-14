@@ -93,6 +93,10 @@
       "value": "Network information access permission required for VPN connection management"
     },
     {
+      "name": "grant_location",
+      "value": "Location access permission required for VPN functionality"
+    },
+    {
       "name": "vpn_clickable_information",
       "value": "Connection time: 00:00 Network speed: 50 KB/s"
     }
