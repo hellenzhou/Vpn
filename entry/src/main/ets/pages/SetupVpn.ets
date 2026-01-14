@@ -126,7 +126,9 @@ export default struct allNetworksBtn {
         this.mtu = 1400;
         // DNS查询不通过VPN，使用系统默认DNS
         this.dnsAddresses = ['114.114.114.114'];  // 设置 DNS 服务器地址
-        this.trustedApplications = [];  // 初始化为空数组，受信任的应用程序
+        // ⚠️ 重要：将VPN Proxy Server添加到信任列表，避免路由循环
+        // VPN Proxy Server需要直接访问真实网络来转发流量
+        this.trustedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器需要排除在VPN路由之外
         this.blockedApplications = [blockedAppName];  // 被阻止的应用是传入的 `blockedAppName`
 
         // 配置路由：默认路由，所有IPv4流量通过VPN

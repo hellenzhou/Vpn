@@ -272,7 +272,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
           new AddressWithPrefix(new Address(tunIp, 1), 24)
         ];
         this.dnsAddresses = ['114.114.114.114']; // 通用DNS地址
-        this.trustedApplications = [];
+        // ⚠️ 重要：将VPN Proxy Server添加到信任列表，避免路由循环
+        // VPN Proxy Server需要直接访问真实网络来转发流量
+        this.trustedApplications = ['com.hellen.vpnserver'];
         this.blockedApplications = [];
       }
     }
