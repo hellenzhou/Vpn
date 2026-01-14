@@ -276,7 +276,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
           new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
         ];
         this.mtu = 1400;
-        this.dnsAddresses = ['114.114.114.114']; // 通用DNS地址
+        // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
+        // 这样所有网络流量（包括DNS）都必须走VPN隧道
+        this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         // ⚠️ 重要：VPN代理服务器必须在trustedApplications中，避免路由循环
         this.trustedApplications = ['com.hellen.vpnserver'];
         
@@ -287,7 +289,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // ⚠️⚠️⚠️ 关键配置：IPv4 和 IPv6 默认路由 ⚠️⚠️⚠️
         this.routes = [
           {
-            interface: 'vpn-tun',
+            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
             destination: {
               address: new Address('0.0.0.0', 1),  // IPv4 默认路由
               prefixLength: 0,
@@ -302,7 +304,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             isDefaultRoute: true
           },
           {
-            interface: 'vpn-tun',
+            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
             destination: {
               address: new Address('::', 2),  // IPv6 默认路由
               prefixLength: 0,

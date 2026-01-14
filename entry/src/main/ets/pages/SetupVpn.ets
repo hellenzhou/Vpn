@@ -125,8 +125,9 @@ export default struct allNetworksBtn {
           new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
         ];
         this.mtu = 1400;
-        // DNS查询不通过VPN，使用系统默认DNS
-        this.dnsAddresses = ['114.114.114.114'];  // 设置 DNS 服务器地址
+        // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
+        // 这样所有网络流量（包括DNS）都必须走VPN隧道
+        this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         // ⚠️ 重要：将VPN Proxy Server添加到信任列表，避免路由循环
         // VPN Proxy Server需要直接访问真实网络来转发流量
         this.trustedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器需要排除在VPN路由之外
@@ -140,7 +141,7 @@ export default struct allNetworksBtn {
         // 配置路由：IPv4 和 IPv6 默认路由
         this.routes = [
           {
-            interface: 'vpn-tun',
+            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
             destination: {
               address: new Address('0.0.0.0', 1),  // IPv4 默认路由
               prefixLength: 0,
@@ -155,7 +156,7 @@ export default struct allNetworksBtn {
             isDefaultRoute: true
           },
           {
-            interface: 'vpn-tun',
+            interface: 'tun0',  // 🔥 修复：使用正确的TUN接口名称
             destination: {
               address: new Address('::', 2),  // IPv6 默认路由
               prefixLength: 0,
@@ -189,6 +190,14 @@ export default struct allNetworksBtn {
         hilog.info(0x0000, 'ZBQ', '[UI]   %{public}d. %{public}s', index + 1, app);
       });
     }
+    hilog.info(0x0000, 'ZBQ', '[UI] 📋 DNS配置:');
+    if (vpnConfig.dnsAddresses.length === 0) {
+      hilog.info(0x0000, 'ZBQ', '[UI]   ✅ 空数组 - DNS查询也走VPN隧道');
+    } else {
+      vpnConfig.dnsAddresses.forEach((dns, index) => {
+        hilog.info(0x0000, 'ZBQ', '[UI]   %{public}d. %{public}s', index + 1, dns);
+      });
+    }
     hilog.info(0x0000, 'ZBQ', '[UI] 📋 routes配置:');
     vpnConfig.routes.forEach((route, index) => {
       hilog.info(0x0000, 'ZBQ', '[UI]   Route %{public}d:', index + 1);
@@ -199,6 +208,13 @@ export default struct allNetworksBtn {
       hilog.info(0x0000, 'ZBQ', '[UI]     - isDefaultRoute: %{public}s', route.isDefaultRoute ? 'true' : 'false');
     });
     hilog.info(0x0000, 'ZBQ', '[UI] 🔍🔍🔍 VPN配置诊断结束 🔍🔍🔍');
+    
+    // 🔥 关键测试提示
+    hilog.info(0x0000, 'ZBQ', '[UI] 🧪 测试步骤：');
+    hilog.info(0x0000, 'ZBQ', '[UI]   1. 启动VPN（不要启动VPN服务器）');
+    hilog.info(0x0000, 'ZBQ', '[UI]   2. 打开浏览器访问网站');
+    hilog.info(0x0000, 'ZBQ', '[UI]   3. 如果浏览器无法访问 = VPN路由表生效 ✅');
+    hilog.info(0x0000, 'ZBQ', '[UI]   4. 如果浏览器仍能访问 = VPN路由表未生效 ❌');
 
     // [Start vpn_config_parameters]
     // ⚠️ 检查扩展能力是否已经创建了VPN连接
