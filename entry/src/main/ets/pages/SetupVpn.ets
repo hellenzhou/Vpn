@@ -119,9 +119,10 @@ export default struct allNetworksBtn {
         tunIp: string,
         blockedAppName: string
       ) {
-        // 配置 IPv4 地址 - 禁用IPv6来强制流量通过VPN
+        // 配置 IPv4 和 IPv6 地址
         this.addresses = [
-          new AddressWithPrefix(new Address(tunIp, 1), 24)   // 只使用IPv4
+          new AddressWithPrefix(new Address(tunIp, 1), 24),   // IPv4
+          new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
         ];
         this.mtu = 1400;
         // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
@@ -138,11 +139,11 @@ export default struct allNetworksBtn {
         // 这样除了trustedApplications中的应用外，所有其他应用都必须走VPN隧道
         this.blockedApplications = [];  // 空数组 = 所有应用走VPN（除了trustedApplications）
 
-        // 🔥 激进路由配置：只使用IPv4强制所有流量通过VPN
+        // 🔥 按照官方DEMO修复路由配置
         this.routes = [
-          // IPv4 默认路由 - 捕获所有IPv4流量
+          // IPv4 默认路由 - 使用正确的interface名称
           {
-            interface: 'tun0',
+            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
             destination: {
               address: new Address('0.0.0.0', 1),  // IPv4 默认路由
               prefixLength: 0,
@@ -156,9 +157,25 @@ export default struct allNetworksBtn {
             hasGateway: true,
             isDefaultRoute: true
           },
-          // 🔥 强制DNS路由 - 捕获所有DNS查询
+          // IPv6 默认路由 - 使用正确的interface名称
           {
-            interface: 'tun0',
+            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
+            destination: {
+              address: new Address('::', 2),  // IPv6 默认路由
+              prefixLength: 0,
+              port: 0
+            },
+            gateway: {
+              address: '::1',
+              family: 2,  // IPv6
+              port: 0
+            },
+            hasGateway: true,
+            isDefaultRoute: true
+          },
+          // 🔥 强制DNS路由 - 使用正确的interface名称
+          {
+            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
             destination: {
               address: new Address('0.0.0.0', 1),  // 所有IPv4 DNS
               prefixLength: 0,
@@ -239,58 +256,12 @@ export default struct allNetworksBtn {
       return;
     }
 
-    // 检查tunnelFd是否有效
-    if (gTunnelFd < 0) {
-      hilog.error(0x0000, 'ZBQ', '[UI] ❌❌❌ 无法创建VPN连接：tunnelFd无效 ❌❌❌');
-      hilog.error(0x0000, 'ZBQ', '[UI] ❌ gTunnelFd=%{public}d', gTunnelFd);
-      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 请先依次点击：1)创建隧道 2)保护隧道');
-      showToast('VPN start failed: 请先创建并保护隧道', 4000);
-      this.flag = 'Error';
-      return;
-    }
-
-    hilog.info(0x0000, 'ZBQ', '[UI] 🚀 准备创建VPN连接...');
-    hilog.info(0x0000, 'ZBQ', '[UI] 📋 VPN配置:');
-    hilog.info(0x0000, 'ZBQ', '[UI]   - TUN IP: %{public}s', tunIp);
-    hilog.info(0x0000, 'ZBQ', '[UI]   - 前缀长度: 24');
-    hilog.info(0x0000, 'ZBQ', '[UI]   - 被阻止应用: %{public}s', blockedAppName);
-    hilog.info(0x0000, 'ZBQ', '[UI] 📞 获取UI Context...');
-    let context = this.getUIContext().getHostContext() as common.VpnExtensionContext;
-    hilog.info(0x0000, 'ZBQ', '[UI] ✅ Context已获取');
-    hilog.info(0x0000, 'ZBQ', '[UI] 📞 调用 vpnExtension.createVpnConnection(context)...');
-    let vpnConnection: vpnExtension.VpnConnection = vpnExtension.createVpnConnection(context);
-    hilog.info(0x0000, 'ZBQ', '[UI] ✅ VpnConnection已创建');
-    hilog.info(0x0000, 'ZBQ', '[UI] 📞 调用 vpnConnection.create(config)...');
-    // 创建 VPN 连接并应用配置
-    vpnConnection.create(vpnConfig).then((data) => {
-      hilog.info(0x0000, 'ZBQ', '[UI] ✅✅✅ VPN连接创建成功 ✅✅✅');
-      hilog.info(0x0000, 'ZBQ', '[UI] ✅ TUN设备文件描述符: FD = %{public}d', data);
-      // [StartExclude vpn_config_parameters]
-      setTunFd(data);  // 获取到的虚拟网络接口文件描述符
-      hilog.info(0x0000, 'ZBQ', '[UI] ✅ 全局变量已设置: gTunFd = %{public}d', gTunFd);
-      hilog.info(0x0000, 'ZBQ', '[UI] 📋 当前状态: gTunFd=%{public}d, gTunnelFd=%{public}d', gTunFd, gTunnelFd);
-
-      // 启动 VPN 连接，传入隧道文件描述符和虚拟网络接口文件描述符
-      hilog.info(0x0000, 'ZBQ', '[UI] 📞 调用 vpn_client.startVpn(%{public}d, %{public}d)...', gTunFd, gTunnelFd);
-      vpn_client.startVpn(gTunFd, gTunnelFd);
-      hilog.info(0x0000, 'ZBQ', '[UI] ✅✅✅ VPN数据转发线程已启动 ✅✅✅');
-      hilog.info(0x0000, 'ZBQ', '[UI] 📝 VPN已完全启动，可以开始使用');
-      showToast('VPN started successfully', 4000);
-      this.flag = 'Pass';  // 设置状态为成功
-
-      notificationOperations.publishNotificationWithWantAgent();
-      // [EndExclude vpn_config_parameters]
-    })
-    // [End vpn_config_parameters]
-      .catch((err: BusinessError) => {
-      // 如果 VPN 创建失败，捕获异常并处理
-      hilog.error(0x0000, 'ZBQ', '[UI] ❌❌❌ VPN连接创建失败 ❌❌❌');
-      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 错误代码: %{public}d', err.code ?? -1);
-      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 错误消息: %{public}s', err.message ?? '');
-      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 错误详情: %{public}s', JSON.stringify(err) ?? '');
-      showToast('VPN start failed: ' + JSON.stringify(err), 4000);
-      this.flag = 'Error';  // 设置状态为失败
-    });
+    // 🔥 关键修复：VPN连接应该在扩展能力进程中创建
+    // 如果gTunFd < 0，说明扩展能力还没有创建VPN连接
+    hilog.error(0x0000, 'ZBQ', '[UI] ❌❌❌ VPN连接未创建，请等待扩展能力自动初始化 ❌❌❌');
+    hilog.error(0x0000, 'ZBQ', '[UI] ❌ gTunFd=%{public}d，扩展能力可能还在初始化中', gTunFd);
+    showToast('VPN connection not ready, please wait...', 4000);
+    this.flag = 'Error';
     hilog.info(0x0000, 'ZBQ', '[UI] ========== 打开VPN调用完成 ==========');
   }
 

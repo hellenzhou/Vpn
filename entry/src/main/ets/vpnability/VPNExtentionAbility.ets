@@ -45,11 +45,32 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onCreate() 被调用 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] - abilityName: %{public}s', want.abilityName ?? '');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ⚠️ 注意：VPN扩展通常使用onRequest()，但onCreate()也会被调用');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 按照官方DEMO自动初始化VPN连接');
     super.onCreate(want);
+    
+    // 🔥 关键修复：在扩展能力进程中创建VPN连接
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 检查Context有效性...');
+    if (!this.context) {
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Context is invalid，无法继续初始化');
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ this.context = null');
+      return;
+    }
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ Context有效，准备创建VpnConnection');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 Context类型: %{public}s', typeof this.context);
+    
+    try {
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📞 调用 vpnExtension.createVpnConnection()...');
+      this.vpnConnection = vpnExtension.createVpnConnection(this.context);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ createVpnConnection() 成功，VpnConnection对象已创建');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 准备自动初始化VPN...');
+      this.initializeVpn();
+    } catch (error) {
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create VpnConnection: %{public}s', JSON.stringify(error));
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误堆栈: %{public}s', error?.stack ?? '');
+    }
     hilog.info(0x0000, 'ZBQ', '[扩展能力] onCreate() 执行完成');
-    // ⚠️ 注意：VPN扩展启动时会调用onRequest而不是onCreate
-    // 初始化逻辑在onRequest()中完成
   }
 
   onRequest(want: Want, startId: number) {
@@ -270,9 +291,10 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         tunIp: string,
         blockedAppName: string
       ) {
-        // 配置 IPv4 地址 - 禁用IPv6来强制流量通过VPN
+        // 配置 IPv4 和 IPv6 地址
         this.addresses = [
-          new AddressWithPrefix(new Address(tunIp, 1), 24)   // 只使用IPv4
+          new AddressWithPrefix(new Address(tunIp, 1), 24),   // IPv4
+          new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
         ];
         this.mtu = 1400;
         // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
@@ -285,11 +307,11 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // 这样除了trustedApplications中的应用外，所有其他应用都必须走VPN隧道
         this.blockedApplications = [];  // 空数组 = 所有应用走VPN（除了trustedApplications）
         
-        // 🔥 激进路由配置：只使用IPv4强制所有流量通过VPN
+        // 🔥 按照官方DEMO修复路由配置
         this.routes = [
-          // IPv4 默认路由 - 捕获所有IPv4流量
+          // IPv4 默认路由 - 使用正确的interface名称
           {
-            interface: 'tun0',
+            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
             destination: {
               address: new Address('0.0.0.0', 1),  // IPv4 默认路由
               prefixLength: 0,
@@ -303,9 +325,25 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             hasGateway: true,
             isDefaultRoute: true
           },
-          // 🔥 强制DNS路由 - 捕获所有DNS查询
+          // IPv6 默认路由 - 使用正确的interface名称
           {
-            interface: 'tun0',
+            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
+            destination: {
+              address: new Address('::', 2),  // IPv6 默认路由
+              prefixLength: 0,
+              port: 0
+            },
+            gateway: {
+              address: '::1',
+              family: 2,  // IPv6
+              port: 0
+            },
+            hasGateway: true,
+            isDefaultRoute: true
+          },
+          // 🔥 强制DNS路由 - 使用正确的interface名称
+          {
+            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
             destination: {
               address: new Address('0.0.0.0', 1),  // 所有IPv4 DNS
               prefixLength: 0,
