@@ -41,30 +41,40 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   private tunIp: string = '0.0.0.0';  // 按照官方DEMO使用0.0.0.0（系统自动分配）
   private blockedAppName: string = 'com.example.testvpn';
 
+  // 🔥 新增：测试方法，确保扩展能力能够被调用
+  testExtensionAbility() {
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== testExtensionAbility() 被调用 ==========');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 测试：扩展能力进程已启动！');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📋 这是一个测试方法，用于验证扩展能力是否正常工作');
+    return "ExtensionAbility is working!";
+  }
+
   onCreate(want: Want) {
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onCreate() 被调用 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] - abilityName: %{public}s', want.abilityName ?? '');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 按照官方DEMO自动初始化VPN连接');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 测试：扩展能力进程已启动！');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 按照官方DEMO在onCreate()中创建VPN连接');
     super.onCreate(want);
     
-    // 🔥 关键修复：在扩展能力进程中创建VPN连接
+    // 🔥 按照官方DEMO：在onCreate()中创建VPN连接
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 检查Context有效性...');
     if (!this.context) {
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Context is invalid，无法继续初始化');
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Context is invalid，无法创建VpnConnection');
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ this.context = null');
       return;
     }
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ Context有效，准备创建VpnConnection');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 Context类型: %{public}s', typeof this.context);
     
     try {
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📞 调用 vpnExtension.createVpnConnection()...');
       this.vpnConnection = vpnExtension.createVpnConnection(this.context);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ createVpnConnection() 成功，VpnConnection对象已创建');
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 准备自动初始化VPN...');
-      this.initializeVpn();
+      
+      // 🔥 按照官方DEMO：直接调用SetupVpn()创建VPN连接
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 准备调用SetupVpn()创建VPN连接...');
+      this.SetupVpn();
     } catch (error) {
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create VpnConnection: %{public}s', JSON.stringify(error));
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
@@ -75,6 +85,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
 
   onRequest(want: Want, startId: number) {
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onRequest() 被调用 ==========');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 测试：onRequest()被调用了！');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅✅✅ 确认：onRequest() 已被系统调用 ✅✅✅');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 📋 调用参数详情:');
     hilog.info(0x0000, 'ZBQ', '[扩展能力]   - abilityName: %{public}s', want.abilityName ?? '');
@@ -82,13 +93,11 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     hilog.info(0x0000, 'ZBQ', '[扩展能力]   - bundleName: %{public}s', want.bundleName ?? '');
     hilog.info(0x0000, 'ZBQ', '[扩展能力]   - context存在: %{public}s', this.context ? '是' : '否');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ VPN扩展启动时会调用onRequest()，这是正确的启动方式');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📝 注意：VPN扩展通常使用onRequest()而不是onCreate()');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ⚠️ 手动操作模式：不自动初始化VPN，等待用户在UI中手动操作');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📝 用户需要在UI中依次点击：1)创建隧道 2)保护隧道 3)打开VPN');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ onRequest() 执行完成（仅启动扩展能力，不执行VPN初始化）');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📝 注意：按照官方DEMO，VPN连接创建在onCreate()中完成');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ onRequest() 执行完成（仅记录日志）');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onRequest() 结束 ==========');
-    // ⚠️ 注意：不自动调用 initializeVpn()，改为手动操作模式
-    // 所有VPN操作（创建隧道、保护隧道、打开VPN）都在UI进程中手动执行
+    // ⚠️ 注意：按照官方DEMO，不在onRequest()中创建VPN连接
+    // VPN连接创建应该在onCreate()中完成
   }
 
   // 🔥 新增：自动初始化VPN的方法
@@ -169,16 +178,25 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 参数检查 - vpn_client存在: %{public}s', typeof vpn_client !== 'undefined' ? '是' : '否');
     
     try {
-      gTunnelFd = vpn_client.udpConnect(this.vpnServerIp, 8888);
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📥 udpConnect() 返回: %{public}d', gTunnelFd);
+      let tunnelFd = vpn_client.udpConnect(this.vpnServerIp, 8888);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📥 udpConnect() 返回: %{public}d', tunnelFd);
       
-      if (gTunnelFd < 0) {
-        hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create UDP tunnel, gTunnelFd: %{public}d', gTunnelFd);
+      if (tunnelFd < 0) {
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create UDP tunnel, tunnelFd: %{public}d', tunnelFd);
         return;
       }
       
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ Tunnel created, FD: %{public}d', gTunnelFd);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ Tunnel created, FD: %{public}d', tunnelFd);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 隧道创建成功，准备调用 Protect()...');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔧 准备设置全局变量 gTunnelFd...');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力]   当前 gTunnelFd = %{public}d', gTunnelFd);
+      setTunnelFd(tunnelFd);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ gTunnelFd已设置为: %{public}d', tunnelFd);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力]   验证 gTunnelFd = %{public}d', gTunnelFd);
+      if (gTunnelFd !== tunnelFd) {
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 警告: gTunnelFd设置后验证失败！');
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 期望值: %{public}d, 实际值: %{public}d', tunnelFd, gTunnelFd);
+      }
       this.Protect();
     } catch (error) {
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ udpConnect() 异常: %{public}s', JSON.stringify(error));
@@ -192,20 +210,6 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.error(0x0000, 'ZBQ', '[扩展能力]   - 检查VPN服务器日志中是否有"Starting VPN Server"和"Socket bound successfully"消息');
       hilog.error(0x0000, 'ZBQ', '[扩展能力]   - 如果使用远程IP，请确认网络连接正常');
       return;
-    }
-    
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅✅✅ UDP隧道创建成功 ✅✅✅');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ 隧道文件描述符: FD = %{public}d', tunnelFd);
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📝 注意: UDP是无连接协议，socket已创建但未实际连接');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📝 后续将通过sendto()发送数据包到服务器');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔧 准备设置全局变量 gTunnelFd...');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力]   当前 gTunnelFd = %{public}d', gTunnelFd);
-    setTunnelFd(tunnelFd);
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ gTunnelFd已设置为: %{public}d', tunnelFd);
-    hilog.info(0x0000, 'ZBQ', '[扩展能力]   验证 gTunnelFd = %{public}d', gTunnelFd);
-    if (gTunnelFd !== tunnelFd) {
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 警告: gTunnelFd设置后验证失败！');
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 期望值: %{public}d, 实际值: %{public}d', tunnelFd, gTunnelFd);
     }
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 准备调用 Protect() 保护UDP隧道...');
     this.Protect();

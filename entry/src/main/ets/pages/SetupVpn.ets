@@ -42,7 +42,7 @@ export default struct allNetworksBtn {
 
   build() {
     Column() {
-      Button($r('app.string.SetupVpn'))
+      Button("创建VPN连接")
         .onClick(() => {
           this.SetupVpn();
         })
@@ -256,25 +256,65 @@ export default struct allNetworksBtn {
       return;
     }
 
-    // 🔥 关键修复：VPN连接应该在扩展能力进程中创建
-    // 如果gTunFd < 0，说明扩展能力还没有创建VPN连接
-    hilog.error(0x0000, 'ZBQ', '[UI] ❌❌❌ VPN连接未创建，请等待扩展能力自动初始化 ❌❌❌');
-    hilog.error(0x0000, 'ZBQ', '[UI] ❌ gTunFd=%{public}d，扩展能力可能还在初始化中', gTunFd);
-    hilog.error(0x0000, 'ZBQ', '[UI] 🔍 诊断信息：');
-    hilog.error(0x0000, 'ZBQ', '[UI]   - 当前时间: %{public}s', new Date().toISOString());
-    hilog.error(0x0000, 'ZBQ', '[UI]   - gTunnelFd: %{public}d', gTunnelFd);
-    hilog.error(0x0000, 'ZBQ', '[UI]   - tunIp: %{public}s', tunIp);
-    hilog.error(0x0000, 'ZBQ', '[UI]   - blockedAppName: %{public}s', blockedAppName);
-    hilog.error(0x0000, 'ZBQ', '[UI] 📝 可能的原因：');
-    hilog.error(0x0000, 'ZBQ', '[UI]   1. 扩展能力进程未启动');
-    hilog.error(0x0000, 'ZBQ', '[UI]   2. 扩展能力Context无效');
-    hilog.error(0x0000, 'ZBQ', '[UI]   3. VPN连接创建失败');
-    hilog.error(0x0000, 'ZBQ', '[UI] 📝 建议操作：');
-    hilog.error(0x0000, 'ZBQ', '[UI]   1. 检查扩展能力进程日志');
-    hilog.error(0x0000, 'ZBQ', '[UI]   2. 确认扩展能力已正确启动');
-    hilog.error(0x0000, 'ZBQ', '[UI]   3. 重启应用重新初始化');
-    showToast('VPN connection not ready, please wait...', 4000);
-    this.flag = 'Error';
+    // 🔥 关键修复：扩展能力没有启动，在UI进程中创建VPN连接
+    hilog.info(0x0000, 'ZBQ', '[UI] 🔥 扩展能力未启动，在UI进程中创建VPN连接');
+    hilog.info(0x0000, 'ZBQ', '[UI] 📋 当前状态：');
+    hilog.info(0x0000, 'ZBQ', '[UI]   - gTunFd: %{public}d (需要在UI进程中创建)', gTunFd);
+    hilog.info(0x0000, 'ZBQ', '[UI]   - gTunnelFd: %{public}d', gTunnelFd);
+    hilog.info(0x0000, 'ZBQ', '[UI] 📞 准备在UI进程中创建VPN连接...');
+    
+    // 检查tunnelFd是否有效
+    if (gTunnelFd < 0) {
+      hilog.error(0x0000, 'ZBQ', '[UI] ❌❌❌ 无法创建VPN连接：tunnelFd无效 ❌❌❌');
+      hilog.error(0x0000, 'ZBQ', '[UI] ❌ gTunnelFd=%{public}d', gTunnelFd);
+      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 请先依次点击：1)创建隧道 2)保护隧道');
+      showToast('VPN start failed: 请先创建并保护隧道', 4000);
+      this.flag = 'Error';
+      return;
+    }
+
+    hilog.info(0x0000, 'ZBQ', '[UI] 🚀 准备创建VPN连接...');
+    hilog.info(0x0000, 'ZBQ', '[UI] 📋 VPN配置:');
+    hilog.info(0x0000, 'ZBQ', '[UI]   - TUN IP: %{public}s', tunIp);
+    hilog.info(0x0000, 'ZBQ', '[UI]   - 前缀长度: 24');
+    hilog.info(0x0000, 'ZBQ', '[UI]   - 被阻止应用: %{public}s', blockedAppName);
+    hilog.info(0x0000, 'ZBQ', '[UI] 📞 获取UI Context...');
+    let context = this.getUIContext().getHostContext() as common.VpnExtensionContext;
+    hilog.info(0x0000, 'ZBQ', '[UI] ✅ Context已获取');
+    hilog.info(0x0000, 'ZBQ', '[UI] 📞 调用 vpnExtension.createVpnConnection(context)...');
+    let vpnConnection: vpnExtension.VpnConnection = vpnExtension.createVpnConnection(context);
+    hilog.info(0x0000, 'ZBQ', '[UI] ✅ VpnConnection已创建');
+    hilog.info(0x0000, 'ZBQ', '[UI] 📞 调用 vpnConnection.create(config)...');
+    // 创建 VPN 连接并应用配置
+    vpnConnection.create(vpnConfig).then((data) => {
+      hilog.info(0x0000, 'ZBQ', '[UI] ✅✅✅ VPN连接创建成功 ✅✅✅');
+      hilog.info(0x0000, 'ZBQ', '[UI] ✅ TUN设备文件描述符: FD = %{public}d', data);
+      // [StartExclude vpn_config_parameters]
+      setTunFd(data);  // 获取到的虚拟网络接口文件描述符
+      hilog.info(0x0000, 'ZBQ', '[UI] ✅ 全局变量已设置: gTunFd = %{public}d', gTunFd);
+      hilog.info(0x0000, 'ZBQ', '[UI] 📋 当前状态: gTunFd=%{public}d, gTunnelFd=%{public}d', gTunFd, gTunnelFd);
+
+      // 启动 VPN 连接，传入隧道文件描述符和虚拟网络接口文件描述符
+      hilog.info(0x0000, 'ZBQ', '[UI] 📞 调用 vpn_client.startVpn(%{public}d, %{public}d)...', gTunFd, gTunnelFd);
+      vpn_client.startVpn(gTunFd, gTunnelFd);
+      hilog.info(0x0000, 'ZBQ', '[UI] ✅✅✅ VPN数据转发线程已启动 ✅✅✅');
+      hilog.info(0x0000, 'ZBQ', '[UI] 📝 VPN已完全启动，可以开始使用');
+      showToast('VPN started successfully', 4000);
+      this.flag = 'Pass';  // 设置状态为成功
+
+      notificationOperations.publishNotificationWithWantAgent();
+      // [EndExclude vpn_config_parameters]
+    })
+    // [End vpn_config_parameters]
+      .catch((err: BusinessError) => {
+      // 如果 VPN 创建失败，捕获异常并处理
+      hilog.error(0x0000, 'ZBQ', '[UI] ❌❌❌ VPN连接创建失败 ❌❌❌');
+      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 错误代码: %{public}d', err.code ?? -1);
+      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 错误消息: %{public}s', err.message ?? '');
+      hilog.error(0x0000, 'ZBQ', '[UI] ❌ 错误详情: %{public}s', JSON.stringify(err) ?? '');
+      showToast('VPN start failed: ' + JSON.stringify(err), 4000);
+      this.flag = 'Error';  // 设置状态为失败
+    });
     hilog.info(0x0000, 'ZBQ', '[UI] ========== 打开VPN调用完成 ==========');
   }
 

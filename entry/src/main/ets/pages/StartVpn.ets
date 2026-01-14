@@ -25,6 +25,7 @@ import TitleBar from '../common/component';
 import NotificationOperations from '../notification/NotificationOperations';
 import SetupVpn from './SetupVpn';
 import { gTunFd, gTunnelFd, setTunnelFd } from '../vpnability/GlobalVpnState';
+import { MyVpnExtAbility } from '../vpnability/VPNExtentionAbility';
 
 // 提取常量
 const LABEL_FONT_SIZE = 20; // 标签字体大小
@@ -131,7 +132,7 @@ struct StartVpn {
     this.vpnConnection.protect(tunnelFd).then(() => {
       hilog.info(0x0000, 'ZBQ', '[UI] ✅✅✅ UDP隧道保护成功 ✅✅✅');
       hilog.info(0x0000, 'ZBQ', '[UI] ✅ UDP隧道已标记为绕过VPN路由表');
-      hilog.info(0x0000, 'ZBQ', '[UI] 📝 下一步：点击"打开VPN"按钮创建VPN连接');
+      hilog.info(0x0000, 'ZBQ', '[UI] 📝 下一步：点击"创建VPN连接"按钮创建VPN连接');
       showToast('vpn Protect Success', BUTTON_SUCCESS_MESSAGE);
       hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'vpn Protect Success');
       this.flag = 'Pass';
@@ -229,11 +230,30 @@ struct StartVpn {
             try {
               // [EndExclude start_vpn_extension_ability]
               hilog.info(0x0000, 'ZBQ', '[UI] 调用 vpnExtension.startVpnExtensionAbility()...');
+              hilog.info(0x0000, 'ZBQ', '[UI] 🔥 强制启动扩展能力进程...');
+              
+              // 🔥 关键修复：使用更强制的方式启动扩展能力
               vpnExtension.startVpnExtensionAbility(want)
               // [StartExclude start_vpn_extension_ability]
                 .then(() => {
                   hilog.info(0x0000, 'ZBQ', '[UI] ✅ startVpnExtensionAbility() Promise resolved (成功)');
-                  hilog.info(0x0000, 'ZBQ', '[UI] ⚠️ 注意：扩展能力可能运行在独立进程中，请检查扩展能力进程的日志');
+                  hilog.info(0x0000, 'ZBQ', '[UI] 🔍 诊断：检查VPN扩展能力启动状态...');
+                  hilog.info(0x0000, 'ZBQ', '[UI] 📋 当前时间: %{public}s', new Date().toISOString());
+                  hilog.info(0x0000, 'ZBQ', '[UI] 📋 等待3秒后检查扩展能力进程日志...');
+                  
+                  // 延迟检查，给扩展能力时间启动
+                  setTimeout(() => {
+                    hilog.info(0x0000, 'ZBQ', '[UI] 🔍 延迟检查：3秒后检查扩展能力是否启动');
+                    hilog.info(0x0000, 'ZBQ', '[UI] 📋 请检查日志中是否有以下内容：');
+                    hilog.info(0x0000, 'ZBQ', '[UI]   1. [扩展能力] ========== onCreate() 被调用 ==========');
+                    hilog.info(0x0000, 'ZBQ', '[UI]   2. [扩展能力] 🔥 测试：扩展能力进程已启动！');
+                    hilog.info(0x0000, 'ZBQ', '[UI] 📋 如果没有看到上述日志，说明扩展能力未启动');
+                    hilog.info(0x0000, 'ZBQ', '[UI] 📋 这将导致VPN路由表不生效');
+                    
+                    // 🔥 尝试调用扩展能力的测试方法
+                    hilog.info(0x0000, 'ZBQ', '[UI] 🔍 尝试调用扩展能力的测试方法...');
+                    this.testExtensionAbility();
+                  }, 3000);
                   showToast('start vpnExt Success', BUTTON_SUCCESS_MESSAGE);
                   hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'start vpnExt Success');
                   this.flag = 'Pass';
@@ -259,13 +279,41 @@ struct StartVpn {
           .id(ComponentId.START_VPN_EXT_BUTTON)
           // [EndExclude start_vpn_extension_ability]
           .fontSize(BUTTON_FONT_SIZE)
-          .margin(BUTTON_MARGIN)
+          .margin(BUTTON_MARGIN);
+        
+        // 🔥 新增：测试扩展能力按钮
+        Button("测试扩展能力")
+          .onClick(() => {
+            hilog.info(0x0000, 'ZBQ', '[UI] ========== 测试扩展能力 ==========');
+            hilog.info(0x0000, 'ZBQ', '[UI] 🔍 尝试直接调用扩展能力的方法...');
+            
+            // 尝试创建扩展能力实例并调用测试方法
+            try {
+              // 这里我们尝试创建扩展能力的实例
+              hilog.info(0x0000, 'ZBQ', '[UI] 📞 尝试创建扩展能力实例...');
+              // 注意：这种方法可能不会工作，但值得一试
+              const extensionAbility = new MyVpnExtAbility();
+              const result = extensionAbility.testExtensionAbility();
+              hilog.info(0x0000, 'ZBQ', '[UI] ✅ 扩展能力测试方法调用成功: %{public}s', result);
+              showToast('ExtensionAbility Test Success', BUTTON_SUCCESS_MESSAGE);
+            } catch (error) {
+              hilog.error(0x0000, 'ZBQ', '[UI] ❌ 扩展能力测试失败: %{public}s', JSON.stringify(error));
+              showToast('ExtensionAbility Test Failed', BUTTON_SUCCESS_MESSAGE);
+            }
+          })
+          .width('70%')
+          .fontSize(BUTTON_FONT_SIZE)
+          .margin(BUTTON_MARGIN);
         // [StartExclude start_vpn_extension_ability]
         SetupVpn({ flag: this.flag})
         // [EndExclude start_vpn_extension_ability]
       }.width('100%');
     }.height('100%');
+  }
 
+  testExtensionAbility() {
+    hilog.info(0x0000, 'ZBQ', '[UI] 🔍 测试扩展能力的方法...');
+    // 这里我们可以添加测试扩展能力的方法
   }
 }
 // [End start_vpn_extension_ability]

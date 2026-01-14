@@ -62,11 +62,11 @@
     },
     {
       "name": "start_vpnExt",
-      "value": "Start_vpnExt"
+      "value": "启动VPN扩展能力"
     },
     {
       "name": "SetupVpn",
-      "value": "SetupVpn"
+      "value": "创建VPN连接"
     },
     {
       "name": "StartDataForward",
