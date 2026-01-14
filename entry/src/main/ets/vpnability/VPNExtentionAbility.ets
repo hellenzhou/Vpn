@@ -91,23 +91,29 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     // 所有VPN操作（创建隧道、保护隧道、打开VPN）都在UI进程中手动执行
   }
 
-  private initializeVpn() {
+  // 🔥 新增：自动初始化VPN的方法
+  initializeVpn() {
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== initializeVpn() 开始执行 ==========');
-
-    if (!this.context) {
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Context is invalid，无法继续初始化');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 检查VpnConnection有效性...');
+    
+    if (!this.vpnConnection) {
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ VpnConnection is null，无法继续初始化');
       return;
     }
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ Context有效，准备创建VpnConnection');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ VpnConnection有效，准备创建UDP隧道');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
 
     try {
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 调用 vpnExtension.createVpnConnection()...');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📞 调用 vpnExtension.createVpnConnection()...');
       this.vpnConnection = vpnExtension.createVpnConnection(this.context);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ createVpnConnection() 成功，VpnConnection对象已创建');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 准备调用 CreateTunnel() 创建UDP隧道...');
       this.CreateTunnel();
     } catch (error) {
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create VpnConnection: %{public}s', JSON.stringify(error));
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误堆栈: %{public}s', error?.stack ?? '');
     }
     hilog.info(0x0000, 'ZBQ', '[扩展能力] initializeVpn() 执行完成');
   }
@@ -148,36 +154,35 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 📋 当前配置:');
     hilog.info(0x0000, 'ZBQ', '[扩展能力]   - VPN服务器IP: %{public}s', this.vpnServerIp);
     hilog.info(0x0000, 'ZBQ', '[扩展能力]   - VPN服务器端口: 8888');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力]   - vpnConnection状态: %{public}s', this.vpnConnection ? '已创建' : '未创建');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] step1: 准备创建UDP隧道');
-    // 连接VPN服务器
-    // [StartExclude vpn_control_case_extention_ability]
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔗 准备连接VPN服务器: %{public}s:8888', this.vpnServerIp);
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📞 调用原生函数 vpn_client.udpConnect(%{public}s, 8888)...', this.vpnServerIp);
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ⏳ 等待udpConnect()返回...');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 检查全局变量状态...');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力]   - gTunnelFd: %{public}d', gTunnelFd);
+    hilog.info(0x0000, 'ZBQ', '[扩展能力]   - gTunFd: %{public}d', gTunFd);
     
-    let tunnelFd: number = -999; // 初始化为一个明显无效的值，用于调试
-    try {
-      tunnelFd = vpn_client.udpConnect(this.vpnServerIp, 8888);
-    } catch (error) {
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ udpConnect() 抛出异常');
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 异常详情: %{public}s', JSON.stringify(error) ?? '');
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 可能原因: 1)原生模块未加载 2)函数签名不匹配 3)参数类型错误');
+    // 检查是否已经创建了隧道
+    if (gTunnelFd >= 0) {
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ⚠️ 隧道已存在，gTunnelFd: %{public}d，跳过创建', gTunnelFd);
+      this.Protect();
       return;
     }
     
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📥 udpConnect() 调用完成，返回值: tunnelFd = %{public}d', tunnelFd);
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 返回值类型检查: typeof(tunnelFd) = %{public}s', typeof tunnelFd);
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 返回值有效性检查: tunnelFd < 0 ? %{public}s', (tunnelFd < 0) ? '是(无效)' : '否(有效)');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 📞 准备调用 vpn_client.udpConnect()...');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 参数检查 - vpn_client存在: %{public}s', typeof vpn_client !== 'undefined' ? '是' : '否');
     
-    if (tunnelFd < 0) {
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌❌❌ 创建UDP隧道失败 ❌❌❌');
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 失败详情:');
-      hilog.error(0x0000, 'ZBQ', '[扩展能力]   - VPN服务器: %{public}s:8888', this.vpnServerIp);
-      hilog.error(0x0000, 'ZBQ', '[扩展能力]   - 返回的FD: %{public}d', tunnelFd);
-      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 可能原因分析:');
-      hilog.error(0x0000, 'ZBQ', '[扩展能力]   1) VPN服务器未启动 - 请检查VPNServer应用是否已启动并点击"Start"按钮');
-      hilog.error(0x0000, 'ZBQ', '[扩展能力]   2) VPN服务器未监听8888端口 - 请检查服务器日志中的"Socket bound successfully"消息');
+    try {
+      gTunnelFd = vpn_client.udpConnect(this.vpnServerIp, 8888);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📥 udpConnect() 返回: %{public}d', gTunnelFd);
+      
+      if (gTunnelFd < 0) {
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create UDP tunnel, gTunnelFd: %{public}d', gTunnelFd);
+        return;
+      }
+      
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ Tunnel created, FD: %{public}d', gTunnelFd);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 隧道创建成功，准备调用 Protect()...');
+      this.Protect();
+    } catch (error) {
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ udpConnect() 异常: %{public}s', JSON.stringify(error));
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
       hilog.error(0x0000, 'ZBQ', '[扩展能力]   3) 网络不可达 - 请确认IP地址正确(127.0.0.1用于本地，10.20.23.147用于远程)');
       hilog.error(0x0000, 'ZBQ', '[扩展能力]   4) socket创建失败 - 请检查原生代码日志中的socket()错误信息');
       hilog.error(0x0000, 'ZBQ', '[扩展能力]   5) IP地址格式错误 - 请确认IP地址格式正确(例如: 127.0.0.1)');

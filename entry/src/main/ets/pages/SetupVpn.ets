@@ -260,6 +260,19 @@ export default struct allNetworksBtn {
     // 如果gTunFd < 0，说明扩展能力还没有创建VPN连接
     hilog.error(0x0000, 'ZBQ', '[UI] ❌❌❌ VPN连接未创建，请等待扩展能力自动初始化 ❌❌❌');
     hilog.error(0x0000, 'ZBQ', '[UI] ❌ gTunFd=%{public}d，扩展能力可能还在初始化中', gTunFd);
+    hilog.error(0x0000, 'ZBQ', '[UI] 🔍 诊断信息：');
+    hilog.error(0x0000, 'ZBQ', '[UI]   - 当前时间: %{public}s', new Date().toISOString());
+    hilog.error(0x0000, 'ZBQ', '[UI]   - gTunnelFd: %{public}d', gTunnelFd);
+    hilog.error(0x0000, 'ZBQ', '[UI]   - tunIp: %{public}s', tunIp);
+    hilog.error(0x0000, 'ZBQ', '[UI]   - blockedAppName: %{public}s', blockedAppName);
+    hilog.error(0x0000, 'ZBQ', '[UI] 📝 可能的原因：');
+    hilog.error(0x0000, 'ZBQ', '[UI]   1. 扩展能力进程未启动');
+    hilog.error(0x0000, 'ZBQ', '[UI]   2. 扩展能力Context无效');
+    hilog.error(0x0000, 'ZBQ', '[UI]   3. VPN连接创建失败');
+    hilog.error(0x0000, 'ZBQ', '[UI] 📝 建议操作：');
+    hilog.error(0x0000, 'ZBQ', '[UI]   1. 检查扩展能力进程日志');
+    hilog.error(0x0000, 'ZBQ', '[UI]   2. 确认扩展能力已正确启动');
+    hilog.error(0x0000, 'ZBQ', '[UI]   3. 重启应用重新初始化');
     showToast('VPN connection not ready, please wait...', 4000);
     this.flag = 'Error';
     hilog.info(0x0000, 'ZBQ', '[UI] ========== 打开VPN调用完成 ==========');
