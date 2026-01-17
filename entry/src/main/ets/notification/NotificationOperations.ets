@@ -31,8 +31,8 @@ export default class NotificationOperations {
   constructor(context: Context) {
     this.context = context;
     let notificationTitle = '';
-    let notificationText = this.context.resourceManager.getStringSync($r('app.string.notification_content'));
-    let notificationAdditional = this.context.resourceManager.getStringSync($r('app.string.notification_additional'));
+    let notificationText = this.context.resourceManager.getStringByNameSync('notification_content');
+    let notificationAdditional = this.context.resourceManager.getStringByNameSync('notification_additional');
     this.basicContent = {
       title: notificationTitle,
       text: notificationText,
@@ -45,8 +45,8 @@ export default class NotificationOperations {
     try {
       if (this.context !== undefined && this.context !== null && this.basicContent !== undefined &&
         this.basicContent !== null) {
-        this.basicContent.title = this.context.resourceManager.getStringSync($r('app.string.vpn_clickable_notification'));
-        this.basicContent.text = this.context.resourceManager.getStringSync($r('app.string.vpn_clickable_information'));
+        this.basicContent.title = this.context.resourceManager.getStringByNameSync('vpn_clickable_notification');
+        this.basicContent.text = this.context.resourceManager.getStringByNameSync('vpn_clickable_information');
         let notificationWantAgent = await wantAgentUtil.createWantAgentForStartAbility(BUNDLE_NAME, ABILITY_NAME);
         let notificationContent = notificationContentUtil.initBasicNotificationContent(this.basicContent);
         let notificationRequest =

@@ -34,11 +34,10 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // - ⚠️ 不要使用10.8段（局域网冲突）
   private vpnServerIp: string = '127.0.0.1'; // VPN服务器IP（可改为10.20.23.147）
   // ⚠️ 重要：TUN IP是VPN虚拟网络的IP，与物理网络无关
-  // - 官方DEMO使用 '0.0.0.0'（系统自动分配）
-  // - 也可以使用192.168.100.x段（VPN虚拟网络）
+  // - 使用192.168.100.x段（VPN虚拟网络）
   // - Gateway必须是192.168.100.1（VPN网关）
   // - ⚠️ 不要改成10.8段或其他物理网络段
-  private tunIp: string = '0.0.0.0';  // 按照官方DEMO使用0.0.0.0（系统自动分配）
+  private tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP（和工作版本一致）
   private blockedAppName: string = 'com.example.testvpn';
 
   // 🔥 新增：测试方法，确保扩展能力能够被调用
@@ -72,9 +71,10 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ createVpnConnection() 成功，VpnConnection对象已创建');
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
       
-      // 🔥 按照官方DEMO：直接调用SetupVpn()创建VPN连接
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 准备调用SetupVpn()创建VPN连接...');
-      this.SetupVpn();
+      // 🔥 按照正确流程：先创建UDP隧道，再保护隧道，最后配置VPN
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 开始VPN初始化流程...');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔹 步骤1: 创建UDP隧道...');
+      this.CreateTunnel();
     } catch (error) {
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create VpnConnection: %{public}s', JSON.stringify(error));
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
@@ -197,7 +197,6 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 警告: gTunnelFd设置后验证失败！');
         hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 期望值: %{public}d, 实际值: %{public}d', tunnelFd, gTunnelFd);
       }
-      this.Protect();
     } catch (error) {
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ udpConnect() 异常: %{public}s', JSON.stringify(error));
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
@@ -266,36 +265,13 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       }
     }
 
-    // 定义目标地址的接口类型
-    interface DestinationItem {
-      address: Address;
-      prefixLength: number;
-      port: number;
-    }
-
-    // 定义网关的接口类型
-    interface GatewayItem {
-      address: string;
-      family: number;
-      port: number;
-    }
-
-    // 定义路由配置的接口类型
-    interface RouteConfig {
-      interface: string;
-      destination: DestinationItem;
-      gateway: GatewayItem;
-      hasGateway: boolean;
-      isDefaultRoute: boolean;
-    }
-
     class Config {
       public addresses: AddressWithPrefix[];
       public mtu: number;
       public dnsAddresses: string[];
       public trustedApplications: string[];
       public blockedApplications: string[];
-      public routes: RouteConfig[];
+      public routes: vpnExtension.RouteInfo[];
       constructor(
         tunIp: string,
         blockedAppName: string
@@ -306,25 +282,27 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
           new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
         ];
         this.mtu = 1400;
-        // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
+        // 🔥🔥🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
         // 这样所有网络流量（包括DNS）都必须走VPN隧道
         this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
-        // ⚠️ 重要：VPN代理服务器必须在trustedApplications中，避免路由循环
-        this.trustedApplications = ['com.hellen.vpnserver'];
         
-        // 🔥 关键修复：使用空数组强制所有应用流量通过VPN
-        // 这样除了trustedApplications中的应用外，所有其他应用都必须走VPN隧道
-        this.blockedApplications = [];  // 空数组 = 所有应用走VPN（除了trustedApplications）
+        // 🔥🔥🔥 关键：trustedApplications为空表示所有应用流量都通过VPN
+        // vpnConnection.protect()已经保护了UDP隧道，不会产生路由循环
+        this.trustedApplications = [];  // 空数组 = 所有应用都走VPN
         
-        // 🔥 按照官方DEMO修复路由配置
+        // 🔥🔥🔥 关键配置：blockedApplications为空表示不阻止任何应用
+        // 所有应用的流量都应该被路由到VPN（除非在trustedApplications中）
+        this.blockedApplications = [];  // 空数组 = 不阻止任何应用，都走VPN
+        
+        // 🔥 全流量VPN路由配置 - 按照工作版本
+        // ⚠️ 不需要127.0.0.0/8排除路由，vpnConnection.protect()已处理UDP隧道保护
         this.routes = [
-          // IPv4 默认路由 - 使用正确的interface名称
+          // IPv4 默认路由 - 捕获所有IPv4流量
           {
-            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
+            interface: 'vpn-tun',
             destination: {
-              address: new Address('0.0.0.0', 1),  // IPv4 默认路由
-              prefixLength: 0,
-              port: 0
+              address: new Address('0.0.0.0', 1),  // 0.0.0.0/0 = 所有IPv4流量
+              prefixLength: 0  // /0 = 匹配所有地址
             },
             gateway: {
               address: '192.168.100.1',
@@ -334,13 +312,12 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             hasGateway: true,
             isDefaultRoute: true
           },
-          // IPv6 默认路由 - 使用正确的interface名称
+          // IPv6 默认路由 - 捕获所有IPv6流量
           {
-            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
+            interface: 'vpn-tun',
             destination: {
-              address: new Address('::', 2),  // IPv6 默认路由
-              prefixLength: 0,
-              port: 0
+              address: new Address('::', 2),  // ::/0 = 所有IPv6流量
+              prefixLength: 0
             },
             gateway: {
               address: '::1',
@@ -349,22 +326,6 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             },
             hasGateway: true,
             isDefaultRoute: true
-          },
-          // 🔥 强制DNS路由 - 使用正确的interface名称
-          {
-            interface: 'vpn-tun',  // 🔥 修复：使用官方DEMO的interface名称
-            destination: {
-              address: new Address('0.0.0.0', 1),  // 所有IPv4 DNS
-              prefixLength: 0,
-              port: 53  // DNS端口
-            },
-            gateway: {
-              address: '192.168.100.1',
-              family: 1,
-              port: 0
-            },
-            hasGateway: true,
-            isDefaultRoute: false
           }
         ];
       }
@@ -375,11 +336,21 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     if (this.vpnConnection) {
       hilog.info(0x0000, 'ZBQ', '[扩展能力] VPN配置: tunIp=%{public}s, blockedAppName=%{public}s', this.tunIp, this.blockedAppName);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 [TUN IP检查] VPN虚拟网络IP配置: %{public}s', this.tunIp);
-      if (this.tunIp === '0.0.0.0') {
-        hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 [TUN IP检查] 使用系统自动分配（官方DEMO方式），系统会分配192.168.100.x段的IP');
-      } else {
-        hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 [TUN IP检查] 使用手动指定IP: %{public}s（便于调试）', this.tunIp);
-      }
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 [TUN IP检查] 使用手动指定IP: %{public}s（与工作版本一致）', this.tunIp);
+      
+      // 🔥 输出详细的VPN配置信息
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ========== 完整VPN配置（与工作版本一致） ==========');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 addresses: %{public}s', JSON.stringify(config.addresses));
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 mtu: %{public}d', config.mtu);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 dnsAddresses: %{public}s (空=DNS走VPN)', JSON.stringify(config.dnsAddresses));
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 trustedApplications: %{public}s (空=所有应用走VPN)', JSON.stringify(config.trustedApplications));
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 blockedApplications: %{public}s (空=不阻止任何应用)', JSON.stringify(config.blockedApplications));
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 routes数量: %{public}d (仅IPv4+IPv6默认路由)', config.routes.length);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 route[0]: IPv4默认路由 0.0.0.0/0 → vpn-tun (网关: 192.168.100.1)');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 route[1]: IPv6默认路由 ::/0 → vpn-tun (网关: ::1)');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ⚠️ UDP隧道已通过vpnConnection.protect()保护，不会路由循环');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ====================================');
+      
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 调用 vpnConnection.create(config)...');
       this.vpnConnection.create(config)
         // [StartExclude vpn_control_case_extention_ability]
@@ -409,23 +380,5 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     hilog.info(0x0000, 'ZBQ', '[扩展能力] SetupVpn() 执行完成');
   }
 
-  // 发送测试数据包的方法
-  sendTestData() {
-    // 创建一个简单的DNS查询包作为测试
-    const testData: Uint8Array = new Uint8Array([
-      0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d,
-      0x00, 0x00, 0x01, 0x00, 0x01
-    ]);
-
-    // 将数据写入TUN设备，测试是否能到达服务器
-    if (gTunFd >= 0) {
-      hilog.info(0x0000, 'testTag', '*** 尝试发送测试数据包到TUN设备 ***');
-      // 注意：这里需要通过NAPI调用写入数据，或者修改native代码
-      vpn_client.sendTestData(gTunFd, testData);
-    } else {
-      hilog.error(0x0000, 'testTag', '*** TUN设备未准备好，无法发送测试数据 ***');
-    }
-  }
 }
 // [End vpn_control_case_extention_ability]

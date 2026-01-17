@@ -23,7 +23,7 @@ export class VpnTest extends VpnExtensionAbility {
   public vpnId: string = 'test_vpn_id';
   public vpnConnection: vpnExtension.VpnConnection | undefined;
   // [StartExclude destroy_vpn_ability]
-  public context = getContext(this) as common.VpnExtensionContext;
+  // Note: Use this.context from VpnExtensionAbility instead of getContext()
   // [EndExclude destroy_vpn_ability]
   destroy() {
     // [StartExclude destroy_vpn_ability]

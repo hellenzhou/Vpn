@@ -41,7 +41,11 @@ export default struct TitleBar {
         .aspectRatio(ASPECT_RATIO)
         .margin({ left: BACK_BUTTON_MARGIN_LEFT })
         .onClick(() => {
-          router.back();
+          try {
+            router.back();
+          } catch (err) {
+            // Handle navigation error silently
+          }
         })
       }
       Text(this.title)

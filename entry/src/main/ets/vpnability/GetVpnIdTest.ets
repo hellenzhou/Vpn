@@ -21,7 +21,7 @@ import { common } from '@kit.AbilityKit';
 export class VpnTest extends VpnExtensionAbility {
   public vpnId: string = '';
   // [StartExclude get_vpn_id_ability]
-  public context = getContext(this) as common.VpnExtensionContext;
+  // Note: Use this.context from VpnExtensionAbility instead of getContext()
   // [EndExclude get_vpn_id_ability]
   getVpnId() {
     // [StartExclude get_vpn_id_ability]

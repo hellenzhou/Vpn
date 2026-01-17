@@ -25,17 +25,21 @@ class WantAgentUtil {
    * @return return the created WantAgent object.
    */
   async createWantAgentForStartAbility(bundleName: string, abilityName: string) {
-    let wantAgentInfo: wantAgent.WantAgentInfo = {
-      wants: [
-        {
-          bundleName: bundleName,
-          abilityName: abilityName
-        }
-      ],
-      actionType: wantAgent.OperationType.START_ABILITY,
-      requestCode: REQUEST_CODE // requestCode是WantAgentInfo的请求码，是使用者定义的一个私有值
+    try {
+      let wantAgentInfo: wantAgent.WantAgentInfo = {
+        wants: [
+          {
+            bundleName: bundleName,
+            abilityName: abilityName
+          }
+        ],
+        actionType: wantAgent.OperationType.START_ABILITY,
+        requestCode: REQUEST_CODE // requestCode是WantAgentInfo的请求码，是使用者定义的一个私有值
+      }
+      return await wantAgent.getWantAgent(wantAgentInfo);
+    } catch (err) {
+      throw new Error('Failed to create WantAgent: ' + JSON.stringify(err));
     }
-    return await wantAgent.getWantAgent(wantAgentInfo);
   }
 
   /**
@@ -45,12 +49,16 @@ class WantAgentUtil {
    * @return return the created WantAgent object.
    */
   async createWantAgentForCommonEvent(action: string) {
-    let wantAgentInfo: wantAgent.WantAgentInfo = {
-      wants: [{ action: action }],
-      actionType: wantAgent.OperationType.SEND_COMMON_EVENT,
-      requestCode: REQUEST_CODE // requestCode是WantAgentInfo的请求码，是使用者定义的一个私有值
+    try {
+      let wantAgentInfo: wantAgent.WantAgentInfo = {
+        wants: [{ action: action }],
+        actionType: wantAgent.OperationType.SEND_COMMON_EVENT,
+        requestCode: REQUEST_CODE // requestCode是WantAgentInfo的请求码，是使用者定义的一个私有值
+      }
+      return await wantAgent.getWantAgent(wantAgentInfo);
+    } catch (err) {
+      throw new Error('Failed to create WantAgent: ' + JSON.stringify(err));
     }
-    return await wantAgent.getWantAgent(wantAgentInfo);
   }
 }
 

@@ -16,4 +16,3 @@
 export const udpConnect:(addr:string,port:number)=>number;
 export const startVpn:(tunFd:number,tunnelFd:number)=>number;
 export const stopVpn:(tunnelFd:number)=>number;
-export const sendTestData:(tunFd:number,data:Uint8Array)=>number;

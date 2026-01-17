@@ -63,6 +63,9 @@ static int g_ipv4Packets = 0;  // IPv4数据包计数
 static int g_ipv6Packets = 0;  // IPv6数据包计数
 static int g_ipv4TcpPackets = 0;  // IPv4 TCP数据包计数
 static int g_ipv6TcpPackets = 0;  // IPv6 TCP数据包计数
+static int g_httpPackets = 0;  // HTTP数据包计数 (端口80)
+static int g_httpsPackets = 0;  // HTTPS数据包计数 (端口443)
+static int g_detailedLogCount = 0;  // 详细日志计数器（仅记录前20个HTTP/HTTPS连接）
 // 获取对应字符串数据, 用于获取udp server 的IP地址
 static constexpr const int MAX_STRING_LENGTH = 1024;
 
@@ -95,168 +98,95 @@ void HandleReadTunfd(FdInfo fdInfo)
         // 检查文件描述符有效性
         if (fdInfo.tunFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunFd: %{public}d, stopping read loop", fdInfo.tunFd);
-            break; // 退出循环，避免无限循环
+            break;
         }
 
         int readResult = read(fdInfo.tunFd, buffer, sizeof(buffer));
         if (readResult <= 0) {
             if (errno != EAGAIN) {
                 NETMANAGER_VPN_LOGE("read tun device error: %{public}d, tunfd: %{public}d", errno, fdInfo.tunFd);
-                if (errno == EBADF || errno == ENOTCONN) {
-                    NETMANAGER_VPN_LOGE("File descriptor error, breaking loop");
-                    break; // 文件描述符错误，退出循环
-                }
             }
-            usleep(10000); // 10ms delay to prevent busy waiting
             continue;
         }
 
         packetCount++;
-        NETMANAGER_VPN_LOGI("📦 PACKET #%d: Read %{public}d bytes from TUN device", packetCount, readResult);
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📦 数据包 #%{public}d: 从TUN设备读取 %{public}d 字节", packetCount, readResult);
         
-        // 记录数据包源IP（TUN IP）用于排查
-        if (readResult >= 20) {
-            uint8_t version = (buffer[0] >> 4);
-            if (version == 4 && readResult >= 20) {
-                char srcIP[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &buffer[12], srcIP, INET_ADDRSTRLEN);
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🔍 [TUN IP检查] 数据包源IP: %{public}s (这是VPN虚拟网络IP，不是物理网络IP)", srcIP);
-            }
-        }
-        
-        // 分析数据包协议类型
-        if (readResult >= 20) {
-            uint8_t version = (buffer[0] >> 4);
-            if (version == 4) {
+        // 解析IP版本
+        if (readResult >= 1) {
+            uint8_t version = (buffer[0] >> 4) & 0x0F;
+            
+            if (version == 4 && readResult >= 20) {  // IPv4
                 g_ipv4Packets++;
                 uint8_t protocol = buffer[9];
-                char srcIP[INET_ADDRSTRLEN], dstIP[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &buffer[12], srcIP, INET_ADDRSTRLEN);
-                inet_ntop(AF_INET, &buffer[16], dstIP, INET_ADDRSTRLEN);
                 
-                int srcPort = 0, dstPort = 0;
+                // 提取源IP和目标IP
+                char srcIP[16], dstIP[16];
+                snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
+                snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+                
                 if (protocol == 6) {  // TCP
                     g_ipv4TcpPackets++;
-                    srcPort = (buffer[20] << 8) | buffer[21];
-                    dstPort = (buffer[22] << 8) | buffer[23];
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 TCP %s:%d -> %s:%d", packetCount, srcIP, srcPort, dstIP, dstPort);
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📊 IPv4 TCP数据包 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d (总计IPv4 TCP: %{public}d)",
-                                 packetCount, srcIP, srcPort, dstIP, dstPort, g_ipv4TcpPackets);
-                } else if (protocol == 17) {  // UDP
-                    srcPort = (buffer[20] << 8) | buffer[21];
-                    dstPort = (buffer[22] << 8) | buffer[23];
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 UDP %s:%d -> %s:%d", packetCount, srcIP, srcPort, dstIP, dstPort);
-                } else {
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 Unknown protocol %d from %s to %s", packetCount, protocol, srcIP, dstIP);
-                }
-            } else if (version == 6) {
-                g_ipv6Packets++;
-                // IPv6数据包解析
-                if (readResult >= 40) {  // IPv6头部至少40字节
-                    char srcIP[INET6_ADDRSTRLEN], dstIP[INET6_ADDRSTRLEN];
-                    inet_ntop(AF_INET6, &buffer[8], srcIP, INET6_ADDRSTRLEN);
-                    inet_ntop(AF_INET6, &buffer[24], dstIP, INET6_ADDRSTRLEN);
-                    
-                    // 查找TCP/UDP头部（跳过扩展头）
-                    uint8_t nextHeader = buffer[6];
-                    int payloadOffset = 40;  // IPv6基本头部40字节
-                    
-                    // 处理扩展头
-                    while (payloadOffset < readResult) {
-                        if (nextHeader == 6) {  // TCP
-                            g_ipv6TcpPackets++;
-                            if (readResult >= payloadOffset + 4) {
-                                int srcPort = (buffer[payloadOffset] << 8) | buffer[payloadOffset + 1];
-                                int dstPort = (buffer[payloadOffset + 2] << 8) | buffer[payloadOffset + 3];
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 TCP %s:%d -> %s:%d", packetCount, srcIP, srcPort, dstIP, dstPort);
-                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📊 IPv6 TCP数据包 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d (总计IPv6 TCP: %{public}d)",
-                                             packetCount, srcIP, srcPort, dstIP, dstPort, g_ipv6TcpPackets);
-                            } else {
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 TCP %s -> %s (incomplete)", packetCount, srcIP, dstIP);
-                            }
-                            break;
-                        } else if (nextHeader == 17) {  // UDP
-                            if (readResult >= payloadOffset + 4) {
-                                int srcPort = (buffer[payloadOffset] << 8) | buffer[payloadOffset + 1];
-                                int dstPort = (buffer[payloadOffset + 2] << 8) | buffer[payloadOffset + 3];
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 UDP %s:%d -> %s:%d", packetCount, srcIP, srcPort, dstIP, dstPort);
-                            } else {
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 UDP %s -> %s (incomplete)", packetCount, srcIP, dstIP);
-                            }
-                            break;
-                        } else if (nextHeader == 0) {  // Hop-by-Hop Options
-                            if (readResult >= payloadOffset + 2) {
-                                nextHeader = buffer[payloadOffset];
-                                payloadOffset += (buffer[payloadOffset + 1] + 1) * 8;
-                            } else {
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 %s -> %s (nextHeader=%d)", packetCount, srcIP, dstIP, nextHeader);
-                                break;
-                            }
-                        } else if (nextHeader == 43) {  // Routing Header
-                            if (readResult >= payloadOffset + 2) {
-                                nextHeader = buffer[payloadOffset];
-                                payloadOffset += (buffer[payloadOffset + 1] + 1) * 8;
-                            } else {
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 %s -> %s (nextHeader=%d)", packetCount, srcIP, dstIP, nextHeader);
-                                break;
-                            }
-                        } else if (nextHeader == 44) {  // Fragment Header
-                            if (readResult >= payloadOffset + 8) {
-                                nextHeader = buffer[payloadOffset];
-                                payloadOffset += 8;
-                            } else {
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 %s -> %s (nextHeader=%d)", packetCount, srcIP, dstIP, nextHeader);
-                                break;
-                            }
-                        } else if (nextHeader == 60) {  // Destination Options
-                            if (readResult >= payloadOffset + 2) {
-                                nextHeader = buffer[payloadOffset];
-                                payloadOffset += (buffer[payloadOffset + 1] + 1) * 8;
-                            } else {
-                                NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 %s -> %s (nextHeader=%d)", packetCount, srcIP, dstIP, nextHeader);
-                                break;
-                            }
-                        } else if (nextHeader == 58) {  // ICMPv6
-                            const char* icmpv6TypeName = "ICMPv6";
-                            if (readResult >= payloadOffset + 1) {
-                                uint8_t icmpv6Type = buffer[payloadOffset];
-                                switch (icmpv6Type) {
-                                    case 133: icmpv6TypeName = "ICMPv6(Router Solicitation)"; break;
-                                    case 134: icmpv6TypeName = "ICMPv6(Router Advertisement)"; break;
-                                    case 135: icmpv6TypeName = "ICMPv6(Neighbor Solicitation)"; break;
-                                    case 136: icmpv6TypeName = "ICMPv6(Neighbor Advertisement)"; break;
-                                    case 128: icmpv6TypeName = "ICMPv6(Echo Request)"; break;
-                                    case 129: icmpv6TypeName = "ICMPv6(Echo Reply)"; break;
-                                    default: {
-                                        char typeStr[32];
-                                        snprintf(typeStr, sizeof(typeStr), "ICMPv6(type=%d)", icmpv6Type);
-                                        icmpv6TypeName = typeStr;
-                                        break;
-                                    }
-                                }
-                            }
-                            NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 %s -> %s (%s)", packetCount, srcIP, dstIP, icmpv6TypeName);
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📊 IPv6数据包 #%{public}d: %{public}s -> %{public}s (%{public}s) - 这是系统控制包，不是浏览器流量",
-                                         packetCount, srcIP, dstIP, icmpv6TypeName);
-                            break;
-                        } else {
-                            char nextHeaderStr[64];
-                            snprintf(nextHeaderStr, sizeof(nextHeaderStr), "nextHeader=%d", nextHeader);
-                            NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 %s -> %s (%s, unsupported)", packetCount, srcIP, dstIP, nextHeaderStr);
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📊 IPv6数据包 #%{public}d: %{public}s -> %{public}s (%{public}s, 不支持)",
-                                         packetCount, srcIP, dstIP, nextHeaderStr);
-                            break;
+                    if (readResult >= 40) {
+                        uint16_t srcPort = (buffer[20] << 8) | buffer[21];
+                        uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                        
+                        // 追踪HTTP/HTTPS流量
+                        const char* serviceLabel = "";
+                        bool isHttpTraffic = false;
+                        if (dstPort == 80) {
+                            g_httpPackets++;
+                            serviceLabel = " [HTTP浏览器流量]";
+                            isHttpTraffic = true;
+                        } else if (dstPort == 443) {
+                            g_httpsPackets++;
+                            serviceLabel = " [HTTPS浏览器流量]";
+                            isHttpTraffic = true;
                         }
                         
-                        // 防止无限循环
-                        if (payloadOffset >= readResult) {
-                            NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 %s -> %s (nextHeader=%d, reached end)", packetCount, srcIP, dstIP, nextHeader);
-                            break;
+                        // 🔥 详细记录前20个HTTP/HTTPS连接
+                        if (isHttpTraffic && g_detailedLogCount < 20) {
+                            g_detailedLogCount++;
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                         "🔥🔥🔥 [关键] HTTP/HTTPS连接 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s",
+                                         g_detailedLogCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                         "🔥 [关键] 此连接已被VPN捕获并发送到服务器127.0.0.1:8888");
                         }
+                        
+                        NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 TCP %s:%d -> %s:%d%s", 
+                                           packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                     "[VPN客户端] 📊 数据包 #%{public}d: IPv4 TCP %{public}s:%{public}d -> %{public}s:%{public}d%{public}s",
+                                     packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
                     }
+                } else if (protocol == 17) {  // UDP
+                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 UDP %s -> %s", packetCount, srcIP, dstIP);
+                } else if (protocol == 1) {  // ICMP
+                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 ICMP %s -> %s", packetCount, srcIP, dstIP);
                 } else {
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 packet (too small, %d bytes)", packetCount, readResult);
+                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 protocol=%d %s -> %s", packetCount, protocol, srcIP, dstIP);
+                }
+            } else if (version == 6 && readResult >= 40) {  // IPv6
+                g_ipv6Packets++;
+                uint8_t nextHeader = buffer[6];
+                
+                char srcIP[40], dstIP[40];
+                snprintf(srcIP, sizeof(srcIP), "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                         buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15],
+                         buffer[16], buffer[17], buffer[18], buffer[19], buffer[20], buffer[21], buffer[22], buffer[23]);
+                snprintf(dstIP, sizeof(dstIP), "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                         buffer[24], buffer[25], buffer[26], buffer[27], buffer[28], buffer[29], buffer[30], buffer[31],
+                         buffer[32], buffer[33], buffer[34], buffer[35], buffer[36], buffer[37], buffer[38], buffer[39]);
+                
+                if (nextHeader == 6) {  // TCP
+                    g_ipv6TcpPackets++;
+                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 TCP %s -> %s", packetCount, srcIP, dstIP);
+                } else if (nextHeader == 17) {  // UDP
+                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 UDP %s -> %s", packetCount, srcIP, dstIP);
+                } else if (nextHeader == 58) {  // ICMPv6
+                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 ICMPv6 %s -> %s", packetCount, srcIP, dstIP);
+                } else {
+                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 nextHeader=%d %s -> %s", packetCount, nextHeader, srcIP, dstIP);
                 }
             } else {
                 NETMANAGER_VPN_LOGI("📊 PACKET #%d: Unknown IP version %d", packetCount, version);
@@ -266,7 +196,7 @@ void HandleReadTunfd(FdInfo fdInfo)
         // 读取到虚拟网卡的数据，通过udp隧道，发送给服务器
         if (fdInfo.tunnelFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunnelFd: %{public}d, stopping send loop", fdInfo.tunnelFd);
-            break; // 退出循环，避免无限循环
+            break;
         }
 
         int sendResult = sendto(fdInfo.tunnelFd, buffer, readResult, 0,
@@ -288,43 +218,38 @@ void HandleReadTunfd(FdInfo fdInfo)
         if (g_packetsSent % 10 == 0) {
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📊 数据包统计: IPv4总数=%{public}d IPv4 TCP=%{public}d IPv6总数=%{public}d IPv6 TCP=%{public}d 发送=%{public}d 响应=%{public}d",
                          g_ipv4Packets, g_ipv4TcpPackets, g_ipv6Packets, g_ipv6TcpPackets, g_packetsSent, g_responsesReceived);
-            // 诊断信息
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🌐 浏览器流量统计: HTTP(端口80)=%{public}d HTTPS(端口443)=%{public}d",
+                         g_httpPackets, g_httpsPackets);
+            
             if (g_ipv4TcpPackets == 0 && g_ipv6TcpPackets == 0) {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ ⚠️ ⚠️ 警告：没有检测到TCP数据包（浏览器流量）！");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 说明：VPN路由表可能未生效，浏览器流量未进入VPN");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 验证方法：不开启VPN服务器，用浏览器访问网站");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ - 如果浏览器无法访问网站 = VPN路由表生效 ✅");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ - 如果浏览器仍能访问网站 = VPN路由表未生效 ❌");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 说明：VPN路由表未生效，浏览器流量未进入VPN隧道");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 此时浏览器能访问网站 = 正常（流量走物理网络）");
             } else {
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ 检测到TCP数据包（浏览器流量），VPN路由表已生效！");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ 验证：不开启VPN服务器，浏览器应该无法访问网站");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ 检测到TCP数据包，VPN路由表已生效，流量进入VPN隧道！");
+                
+                if (g_httpPackets == 0 && g_httpsPackets == 0) {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 但是没有检测到HTTP/HTTPS流量（可能使用其他端口或协议）");
+                } else {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅✅✅ 已捕获 %{public}d 个HTTP/HTTPS连接！", g_httpPackets + g_httpsPackets);
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ");
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🔥 关键测试结论：");
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ 如果此时浏览器无法访问网站 = VPN工作正常（流量被捕获且服务器未响应）");
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ❌ 如果此时浏览器仍能访问网站 = 浏览器有双路径（部分流量绕过VPN）");
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ");
+                }
             }
         }
         
-        // 警告：如果发送了很多数据包但没有收到响应，可能服务器未运行
+        // 警告：如果发送了很多数据包但没有收到响应
         if (g_packetsSent > 10 && g_responsesReceived == 0) {
             time_t now = time(nullptr);
             if (g_lastResponseTime == 0 || (now - g_lastResponseTime) > 5) {
                 NETMANAGER_VPN_LOGE("⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！", g_packetsSent);
                 NETMANAGER_VPN_LOGE("⚠️ 可能原因：VPN服务器(127.0.0.1:8888)未运行或未响应");
-                NETMANAGER_VPN_LOGE("⚠️ 如果浏览器仍能访问网站，说明VPN路由表未生效，流量未走VPN");
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！", g_packetsSent);
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 可能原因：VPN服务器(127.0.0.1:8888)未运行或未响应");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 数据包统计: IPv4总数=%{public}d IPv4 TCP=%{public}d IPv6总数=%{public}d IPv6 TCP=%{public}d",
-                             g_ipv4Packets, g_ipv4TcpPackets, g_ipv6Packets, g_ipv6TcpPackets);
-                if (g_ipv4TcpPackets == 0 && g_ipv6TcpPackets == 0) {
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ ⚠️ ⚠️ 严重警告：没有检测到TCP数据包（浏览器流量）！");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 说明：VPN路由表未生效，浏览器流量未进入VPN隧道");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 当前只有IPv6系统控制包（ICMPv6）进入VPN，没有HTTP/HTTPS流量");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 验证方法：不开启VPN服务器，用浏览器访问网站");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ - 如果浏览器无法访问网站 = VPN路由表生效 ✅");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ - 如果浏览器仍能访问网站 = VPN路由表未生效 ❌");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ 建议：1)检查VPN连接是否在系统设置中激活 2)检查VPN路由表配置 3)确认浏览器是否使用IPv4");
-                } else {
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ 检测到TCP数据包（浏览器流量），VPN路由表已生效！");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ 验证：不开启VPN服务器，浏览器应该无法访问网站（这是正常的）");
-                }
-                g_lastResponseTime = now;  // 避免重复警告
+                g_lastResponseTime = now;
             }
         }
     }
@@ -347,48 +272,34 @@ void HandleTcpReceived(FdInfo fdInfo)
         // 检查文件描述符有效性
         if (fdInfo.tunnelFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunnelFd: %{public}d, stopping receive loop", fdInfo.tunnelFd);
-            break; // 退出循环，避免无限循环
+            break;
         }
 
         int length = recvfrom(fdInfo.tunnelFd, buffer, sizeof(buffer),
             0, reinterpret_cast<struct sockaddr *>(&fdInfo.serverAddr), reinterpret_cast<socklen_t *>(&addrlen));
         if (length < 0) {
             if (errno != EAGAIN) {
-                NETMANAGER_VPN_LOGE("❌ Receive error: %{public}d, tunnelFd: %{public}d, error: %{public}s",
-                                    errno, fdInfo.tunnelFd, strerror(errno));
-                if (errno == EBADF || errno == ENOTCONN) {
-                    NETMANAGER_VPN_LOGE("File descriptor error, breaking loop");
-                    break; // 文件描述符错误，退出循环
-                }
+                NETMANAGER_VPN_LOGE("read tun device error: %{public}d，tunnelfd: %{public}d", errno, fdInfo.tunnelFd);
             }
-            usleep(10000); // 10ms delay to prevent busy waiting
             continue;
         }
 
         responseCount++;
         g_responsesReceived++;
-        g_lastResponseTime = time(nullptr);
-        char serverAddrStr[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &fdInfo.serverAddr.sin_addr, serverAddrStr, INET_ADDRSTRLEN);
-        NETMANAGER_VPN_LOGI("📥 [服务端->客户端] RESPONSE #%d: 从服务器[%s:%d]收到 %{public}d 字节 (总计响应: %{public}d)", 
-                           responseCount, serverAddrStr, ntohs(fdInfo.serverAddr.sin_port), length, g_responsesReceived);
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📥 [服务端->客户端] 响应 #%{public}d: 从服务器[%{public}s:%{public}d]收到 %{public}d 字节 (总计响应: %{public}d)",
-                     responseCount, serverAddrStr, ntohs(fdInfo.serverAddr.sin_port), length, g_responsesReceived);
+        NETMANAGER_VPN_LOGI("📥 RESPONSE #%d: Received %{public}d bytes from server (total responses: %{public}d)", 
+                           responseCount, length, g_responsesReceived);
 
         // 接收到udp server的数据，写入到虚拟网卡中
-        // 检查tunFd有效性
         if (fdInfo.tunFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunFd: %{public}d, stopping write loop", fdInfo.tunFd);
-            break; // 退出循环，避免无限循环
+            break;
         }
 
-        int writeResult = write(fdInfo.tunFd, buffer, length);
-        if (writeResult <= 0) {
-            NETMANAGER_VPN_LOGE("❌ [客户端写入TUN] 响应 #%d 写入TUN设备失败, errno: %{public}d", responseCount, errno);
-            OH_LOG_Print(LOG_APP, LOG_ERROR, 0x0000, "ZBQ", "[VPN客户端] ❌ [客户端写入TUN] 响应 #%{public}d 写入TUN设备失败, errno: %{public}d", responseCount, errno);
+        int ret = write(fdInfo.tunFd, buffer, length);
+        if (ret <= 0) {
+            NETMANAGER_VPN_LOGE("error Write To Tunfd, errno: %{public}d", errno);
         } else {
-            NETMANAGER_VPN_LOGI("✅ [客户端写入TUN] RESPONSE #%d: 已写入 %{public}d 字节到TUN设备", responseCount, writeResult);
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ [客户端写入TUN] 响应 #%{public}d: 已写入 %{public}d 字节到TUN设备", responseCount, writeResult);
+            NETMANAGER_VPN_LOGI("✅ Wrote %{public}d bytes to TUN device", ret);
         }
     }
 
@@ -450,14 +361,12 @@ static napi_value UdpConnect(napi_env env, napi_callback_info info)
         NETMANAGER_VPN_LOGE("❌ socket() 创建失败");
         NETMANAGER_VPN_LOGE("❌ 错误码: errno=%{public}d", errno_save);
         NETMANAGER_VPN_LOGE("❌ 错误描述: %{public}s", strerror(errno_save));
-        NETMANAGER_VPN_LOGE("❌ 可能原因: 1)系统资源不足 2)权限不足 3)网络子系统未初始化");
         napi_value retValue;
         napi_create_int32(env, -1, &retValue);
         return retValue;
     }
     
     NETMANAGER_VPN_LOGI("✅ 步骤1完成: UDP socket创建成功, fd=%{public}d", sockFd);
-    NETMANAGER_VPN_LOGI("📡 Socket详细信息: family=AF_INET, type=SOCK_DGRAM, protocol=0");
 
     // 步骤2: 设置socket选项（超时）
     NETMANAGER_VPN_LOGI("⏰ 步骤2: 设置socket接收超时...");
@@ -498,7 +407,6 @@ static napi_value UdpConnect(napi_env env, napi_callback_info info)
     NETMANAGER_VPN_LOGI("   - 网络字节序IP: %{public}s", inet_ntoa(g_fdInfo.serverAddr.sin_addr));
     NETMANAGER_VPN_LOGI("   - 端口(主机序): %{public}d", port);
     NETMANAGER_VPN_LOGI("   - 端口(网络序): %{public}d", ntohs(g_fdInfo.serverAddr.sin_port));
-    NETMANAGER_VPN_LOGI("   - sin_family: %{public}d (AF_INET)", g_fdInfo.serverAddr.sin_family);
 
     // 步骤4: 创建返回值
     NETMANAGER_VPN_LOGI("📦 步骤4: 创建NAPI返回值...");
@@ -530,20 +438,12 @@ static napi_value StartVpn(napi_env env, napi_callback_info info)
     napi_get_value_int32(env, args[0], &g_fdInfo.tunFd);
     napi_get_value_int32(env, args[1], &g_fdInfo.tunnelFd);
 
-    // 验证文件描述符有效性
-    if (g_fdInfo.tunFd < 0 || g_fdInfo.tunnelFd < 0) {
-        NETMANAGER_VPN_LOGE("Invalid file descriptors - tunFd: %{public}d, tunnelFd: %{public}d", g_fdInfo.tunFd, g_fdInfo.tunnelFd);
-        napi_value retValue;
-        napi_create_int32(env, -1, &retValue);
-        return retValue;
-    }
-
     if (g_threadRunF) {
         g_threadRunF = false;
         g_threadT1.join();
         g_threadT2.join();
     }
-
+ 
     // 启动两个线程, 一个处理读取虚拟网卡的数据，另一个接收服务端的数据
     g_threadRunF = true;
     std::thread tt1(HandleReadTunfd, g_fdInfo);
@@ -551,8 +451,6 @@ static napi_value StartVpn(napi_env env, napi_callback_info info)
 
     g_threadT1 = std::move(tt1);
     g_threadT2 = std::move(tt2);
-
-    NETMANAGER_VPN_LOGI("StartVpn successful - tunFd: %{public}d, tunnelFd: %{public}d", g_fdInfo.tunFd, g_fdInfo.tunnelFd);
 
     napi_value retValue;
     napi_create_int32(env, 0, &retValue);
@@ -579,7 +477,7 @@ static napi_value StopVpn(napi_env env, napi_callback_info info)
         g_threadT2.join();
     }
  
-    NETMANAGER_VPN_LOGI("StopVpn successful");
+    NETMANAGER_VPN_LOGI("[ZBQ] StopVpn successful");
  
     napi_value retValue;
     napi_create_int32(env, 0, &retValue);
@@ -587,58 +485,12 @@ static napi_value StopVpn(napi_env env, napi_callback_info info)
 }
  
 EXTERN_C_START
-static napi_value SendTestData(napi_env env, napi_callback_info info)
-{
-    size_t argc = 2;
-    napi_value args[2] = {nullptr};
-    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-
-    int32_t tunFd;
-    napi_get_value_int32(env, args[0], &tunFd);
-
-    // 获取Uint8Array数据
-    bool isTypedArray = false;
-    napi_typedarray_type type;
-    size_t byteLength = 0;
-    void* data = nullptr;
-    napi_value arrayBuffer;
-
-    napi_is_typedarray(env, args[1], &isTypedArray);
-    if (isTypedArray) {
-        napi_get_typedarray_info(env, args[1], &type, &byteLength, &data, &arrayBuffer, nullptr);
-    } else {
-        NETMANAGER_VPN_LOGE("❌ Argument is not a TypedArray");
-        napi_value retValue;
-        napi_create_int32(env, -1, &retValue);
-        return retValue;
-    }
-
-    if (tunFd >= 0 && data != nullptr && byteLength > 0) {
-        NETMANAGER_VPN_LOGI("=== SENDING TEST DATA TO TUN DEVICE ===");
-        NETMANAGER_VPN_LOGI("tunFd: %{public}d, data size: %{public}zu", tunFd, byteLength);
-
-        ssize_t written = write(tunFd, data, byteLength);
-        if (written > 0) {
-            NETMANAGER_VPN_LOGI("✅ Successfully wrote %{public}zd bytes to TUN device", written);
-        } else {
-            NETMANAGER_VPN_LOGE("❌ Failed to write to TUN device: %{public}s", strerror(errno));
-        }
-    } else {
-        NETMANAGER_VPN_LOGE("❌ Invalid parameters: tunFd=%{public}d, data=%p, size=%{public}zu", tunFd, data, byteLength);
-    }
-
-    napi_value retValue;
-    napi_create_int32(env, 0, &retValue);
-    return retValue;
-}
-
 static napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
         {"udpConnect", nullptr, UdpConnect, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"startVpn", nullptr, StartVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopVpn", nullptr, StopVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"sendTestData", nullptr, SendTestData, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

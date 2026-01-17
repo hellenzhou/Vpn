@@ -62,15 +62,11 @@
     },
     {
       "name": "start_vpnExt",
-      "value": "启动VPN扩展能力"
+      "value": "Start_vpnExt"
     },
     {
       "name": "SetupVpn",
-      "value": "创建VPN连接"
-    },
-    {
-      "name": "StartDataForward",
-      "value": "启动数据转发"
+      "value": "SetupVpn"
     },
     {
       "name": "stop_vpn",
@@ -81,24 +77,12 @@
       "value": "Shutdown vpn_Ext"
     },
     {
-      "name": "app_name",
-      "value": "VPN Control Case"
-    },
-    {
       "name": "grant_internet",
-      "value": "Network access permission required for VPN functionality"
+      "value": "Required for network communication"
     },
     {
-      "name": "grant_network_info",
-      "value": "Network information access permission required for VPN connection management"
-    },
-    {
-      "name": "grant_location",
-      "value": "Location access permission required for VPN functionality"
-    },
-    {
-      "name": "vpn_clickable_information",
-      "value": "Connection time: 00:00 Network speed: 50 KB/s"
+      "name": "grant_manage_vpn",
+      "value": "Required to create and manage VPN connections"
     }
   ]
 }

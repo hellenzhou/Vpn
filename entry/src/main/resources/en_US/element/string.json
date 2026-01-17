@@ -82,7 +82,11 @@
     },
     {
       "name": "grant_internet",
-      "value": "grant_internet"
+      "value": "Required for network communication"
+    },
+    {
+      "name": "grant_manage_vpn",
+      "value": "Required to create and manage VPN connections"
     }
   ]
 }

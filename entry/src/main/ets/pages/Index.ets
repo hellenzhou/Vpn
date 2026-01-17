@@ -22,6 +22,8 @@ import { notificationUtil } from '../notification/NotificationUtil';
 import { showToast } from '../common/ShowToast';
 import { VpnTest as GetVpnIdTest } from '../vpnability/GetVpnIdTest';
 import { VpnTest as DestroyVpnTest } from '../vpnability/DestroyVpnTest';
+import { vpnExtension } from '@kit.NetworkKit';
+import { Want } from '@kit.AbilityKit';
 
 // 常量定义
 const TITLE_FONT_SIZE = 35; // 标题字体大小
@@ -54,16 +56,17 @@ struct Index {
 
         // Start VPN 按钮
         Button($r('app.string.Start_VPN'))
-          .onClick(() => {
+          .onClick(async () => {
             hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'Succeeded in clicking the button.');
-            router.pushUrl({ url: 'pages/StartVpn' }).then(() => {
+            try {
+              await router.pushUrl({ url: 'pages/StartVpn' });
               hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'Succeeded in jumping to the second page.');
               this.flag = 'Pass';
-            }).catch((err: BusinessError) => {
+            } catch (err) {
               Logger.error('developTag', 'Failed to jump to the second page: %{public}s',
                 JSON.stringify(err) ?? '');
               this.flag = 'Error';
-            });
+            }
           })
           .id(ComponentId.START_VPN_BUTTON)
           .width('70%')
@@ -72,16 +75,17 @@ struct Index {
 
         // Stop VPN 按钮
         Button($r('app.string.Stop_VPN'))
-          .onClick(() => {
+          .onClick(async () => {
             hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'Succeeded in clicking the button.');
-            router.pushUrl({ url: 'pages/StopVpn' }).then(() => {
+            try {
+              await router.pushUrl({ url: 'pages/StopVpn' });
               hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'Succeeded in jumping to the second page.');
               this.flag = 'Pass';
-            }).catch((err: BusinessError) => {
+            } catch (err) {
               Logger.error('developTag', 'Failed to jump to the second page: %{public}s',
                 JSON.stringify(err) ?? '');
               this.flag = 'Error';
-            });
+            }
           })
           .id(ComponentId.STOP_VPN_BUTTON)
           .width('70%')
@@ -108,6 +112,33 @@ struct Index {
         }).width('70%')
           .fontSize(BUTTON_FONT_SIZE)
           .margin(BUTTON_MARGIN);
+
+        // 🔥 测试 Extension Ability onCreate()
+        Button('🧪 启动VPN Extension Ability')
+          .onClick(() => {
+            hilog.info(0x0000, 'ZBQ', '[ZBQ] [主页] 准备启动 VPN Extension Ability...');
+            let want: Want = {
+              deviceId: '',
+              bundleName: 'com.samples.vpncontrol_case',
+              abilityName: 'MyVpnExtAbility',
+            };
+            
+            vpnExtension.startVpnExtensionAbility(want)
+              .then(() => {
+                hilog.info(0x0000, 'ZBQ', '[ZBQ] [主页] ✅ VPN Extension Ability 启动成功！');
+                hilog.info(0x0000, 'ZBQ', '[ZBQ] [主页] 🔍 请查看 Hilog 中的 [扩展能力] 日志！');
+                showToast('✅ Extension Ability 已启动\n请查看 Hilog [扩展能力] 日志', TOAST_DURATION);
+              })
+              .catch((err: Error) => {
+                hilog.error(0x0000, 'ZBQ', '[ZBQ] [主页] ❌ VPN Extension Ability 启动失败: %{public}s', 
+                  JSON.stringify(err) ?? '');
+                showToast('❌ 启动失败: ' + JSON.stringify(err), TOAST_DURATION);
+              });
+          })
+          .width('70%')
+          .fontSize(BUTTON_FONT_SIZE)
+          .margin(BUTTON_MARGIN)
+          .backgroundColor(0xFF6B35); // 橙色，突出显示
 
       }.width('100%');
     }.height('100%');

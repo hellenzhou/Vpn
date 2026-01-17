@@ -14,10 +14,15 @@
 */
 
 import promptAction from '@ohos.promptAction';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 export function showToast(msg: string, dur: number) {
-  promptAction.showToast({
-    message: msg,
-    duration: dur
-  });
+  try {
+    promptAction.showToast({
+      message: msg,
+      duration: dur
+    });
+  } catch (err) {
+    hilog.error(0x0000, 'ShowToast', 'Failed to show toast: %{public}s', JSON.stringify(err) ?? '');
+  }
 }

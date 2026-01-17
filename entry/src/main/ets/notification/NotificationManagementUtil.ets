@@ -59,10 +59,13 @@ class NotificationManagementUtil {
 
   // Display badge
   async setBadgeNumber(num: number) {
-    await notificationManager.setBadgeNumber(num).then(() => {
+    try {
+      await notificationManager.setBadgeNumber(num);
       this.badgeNum = num;
       Logger.info('displayBadge success');
-    });
+    } catch (err) {
+      Logger.error('displayBadge failed: ' + JSON.stringify(err));
+    }
   }
 
   getBadgeNumber(): number {
