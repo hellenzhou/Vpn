@@ -93,9 +93,9 @@ export default struct allNetworksBtn {
         ];
         this.mtu = 1400;
         
-        // 🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
-        // 这样所有网络流量（包括DNS）都必须走VPN隧道
-        this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
+        // 🔥 关键修复：指定8.8.8.8作为DNS服务器，强制所有DNS查询使用Google DNS
+        // 这样避免使用不稳定的223.5.5.5，提高DNS解析成功率
+        this.dnsAddresses = ['8.8.8.8'];  // 使用Google DNS，稳定可靠
         
         // 🔥 重要：VPN Proxy Server必须被阻止使用VPN，避免路由循环
         // VPN Proxy Server必须直接访问物理网络来转发流量，不能走VPN隧道

@@ -282,9 +282,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
           new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
         ];
         this.mtu = 1400;
-        // 🔥🔥🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
-        // 这样所有网络流量（包括DNS）都必须走VPN隧道
-        this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
+        // 🔥🔥🔥 关键修复：指定8.8.8.8作为DNS服务器，强制所有DNS查询使用Google DNS
+        // 这样避免使用不稳定的223.5.5.5，提高DNS解析成功率
+        this.dnsAddresses = ['8.8.8.8'];  // 使用Google DNS，稳定可靠
         
         // 🔥🔥🔥 关键：trustedApplications为空表示所有应用流量都通过VPN
         // vpnConnection.protect()已经保护了UDP隧道，不会产生路由循环
