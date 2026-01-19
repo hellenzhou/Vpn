@@ -286,14 +286,13 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // 这样所有网络流量（包括DNS）都必须走VPN隧道
         this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         
-        // 🔥🔥🔥 修复路由循环：必须将VPN代理服务器添加到trustedApplications
-        // VPN代理服务器需要直接访问真实网络来转发流量，否则会形成路由循环！
-        // ⚠️ 重要：VPN服务器的socket流量不能被TUN设备捕获，否则会无限循环
-        this.trustedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器排除在VPN路由之外
+        // 🔥🔥🔥 关键：trustedApplications为空表示所有应用流量都通过VPN
+        // vpnConnection.protect()已经保护了UDP隧道，不会产生路由循环
+        this.trustedApplications = [];  // 空数组 = 所有应用都走VPN
         
         // 🔥🔥🔥 关键配置：blockedApplications为空表示不阻止任何应用
-        // 所有应用的流量都应该被路由到VPN（除了trustedApplications中的）
-        this.blockedApplications = [];  // 空数组 = 不阻止任何应用，都走VPN（除了trusted的）
+        // 所有应用的流量都应该被路由到VPN（除非在trustedApplications中）
+        this.blockedApplications = [];  // 空数组 = 不阻止任何应用，都走VPN
         
         // 🔥 全流量VPN路由配置 - 按照工作版本
         // ⚠️ 不需要127.0.0.0/8排除路由，vpnConnection.protect()已处理UDP隧道保护
@@ -340,16 +339,16 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 [TUN IP检查] 使用手动指定IP: %{public}s（与工作版本一致）', this.tunIp);
       
       // 🔥 输出详细的VPN配置信息
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ========== 完整VPN配置（防止路由循环） ==========');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ========== 完整VPN配置（与工作版本一致） ==========');
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 addresses: %{public}s', JSON.stringify(config.addresses));
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 mtu: %{public}d', config.mtu);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 dnsAddresses: %{public}s (空=DNS走VPN)', JSON.stringify(config.dnsAddresses));
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 trustedApplications: %{public}s (VPN服务器不走VPN，避免循环)', JSON.stringify(config.trustedApplications));
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 blockedApplications: %{public}s (空=所有应用走VPN，除了trusted)', JSON.stringify(config.blockedApplications));
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 trustedApplications: %{public}s (空=所有应用走VPN)', JSON.stringify(config.trustedApplications));
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 blockedApplications: %{public}s (空=不阻止任何应用)', JSON.stringify(config.blockedApplications));
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 routes数量: %{public}d (仅IPv4+IPv6默认路由)', config.routes.length);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 route[0]: IPv4默认路由 0.0.0.0/0 → vpn-tun (网关: 192.168.100.1)');
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 route[1]: IPv6默认路由 ::/0 → vpn-tun (网关: ::1)');
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ VPN服务器(com.hellen.vpnserver)已排除在VPN路由外，不会循环');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ⚠️ UDP隧道已通过vpnConnection.protect()保护，不会路由循环');
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ====================================');
       
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 调用 vpnConnection.create(config)...');
