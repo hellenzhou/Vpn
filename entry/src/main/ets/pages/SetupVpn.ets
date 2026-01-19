@@ -97,14 +97,11 @@ export default struct allNetworksBtn {
         // 这样所有网络流量（包括DNS）都必须走VPN隧道
         this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         
-        // 🔥 重要：将VPN Proxy Server添加到信任列表，避免路由循环
-        // VPN Proxy Server需要直接访问真实网络来转发流量
-        this.trustedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器需要排除在VPN路由之外
+        // 🔥 重要：VPN Proxy Server必须被阻止使用VPN，避免路由循环
+        // VPN Proxy Server必须直接访问物理网络来转发流量，不能走VPN隧道
+        this.trustedApplications = [];  // 没有应用被特殊信任使用VPN
+        this.blockedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器必须被阻止使用VPN
         
-        // 🔥 关键修复：使用空数组强制所有应用流量通过VPN
-        // 这样除了trustedApplications中的应用外，所有其他应用都必须走VPN隧道
-        this.blockedApplications = [];  // 空数组 = 所有应用走VPN（除了trustedApplications）
-
         // 🔥 全流量VPN路由配置
         this.routes = [
           // IPv4 默认路由 - 捕获所有 IPv4 流量
