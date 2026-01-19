@@ -45,6 +45,10 @@
       "value": "vpn_clickable_notification"
     },
     {
+      "name": "vpn_clickable_information",
+      "value": "Connection time: 00:00 Speed: 50 KB/s"
+    },
+    {
       "name": "Start_VPN",
       "value": "Startup interface"
     },
