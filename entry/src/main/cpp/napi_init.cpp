@@ -66,6 +66,10 @@ static int g_ipv6TcpPackets = 0;  // IPv6 TCP数据包计数
 static int g_httpPackets = 0;  // HTTP数据包计数 (端口80)
 static int g_httpsPackets = 0;  // HTTPS数据包计数 (端口443)
 static int g_detailedLogCount = 0;  // 详细日志计数器（仅记录前20个HTTP/HTTPS连接）
+static int g_packetsReadFromTun = 0;  // 从TUN读取的数据包总数
+static int g_packetsForwarded = 0;  // 成功转发的数据包总数
+static int g_packetsDropped = 0;  // 被丢弃的数据包总数（读取失败、发送失败等）
+static int g_packetsSendFailed = 0;  // 发送失败的数据包数
 // 获取对应字符串数据, 用于获取udp server 的IP地址
 static constexpr const int MAX_STRING_LENGTH = 1024;
 
@@ -105,11 +109,19 @@ void HandleReadTunfd(FdInfo fdInfo)
         if (readResult <= 0) {
             if (errno != EAGAIN) {
                 NETMANAGER_VPN_LOGE("read tun device error: %{public}d, tunfd: %{public}d", errno, fdInfo.tunFd);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ TUN读取失败: errno=%{public}d, 数据包被丢弃", errno);
+                g_packetsDropped++;
             }
             continue;
         }
 
         packetCount++;
+        g_packetsReadFromTun++;  // 统计从TUN读取的数据包
+        
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                     "📥 从TUN读取数据包 #%{public}d: 大小=%{public}d字节 (总计读取: %{public}d, 已转发: %{public}d, 已丢弃: %{public}d)",
+                     packetCount, readResult, g_packetsReadFromTun, g_packetsForwarded, g_packetsDropped);
         
         // 解析IP版本
         if (readResult >= 1) {
@@ -229,20 +241,36 @@ void HandleReadTunfd(FdInfo fdInfo)
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 nextHeader=%d %s -> %s", packetCount, nextHeader, srcIP, dstIP);
                 }
             } else {
+                // 数据包太小或版本未知，但仍然会被转发
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                             "⚠️ 未知IP版本数据包 #%{public}d: IP版本=%{public}d (大小=%{public}d字节)",
+                             "⚠️ 未知/异常数据包 #%{public}d: IP版本=%{public}d (大小=%{public}d字节) - 仍将转发",
                              packetCount, version, readResult);
                 NETMANAGER_VPN_LOGI("📊 PACKET #%d: Unknown IP version %d", packetCount, version);
             }
+        } else {
+            // readResult < 1 的情况（理论上不会到这里，因为上面已经检查了readResult <= 0）
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "⚠️ 异常数据包 #%{public}d: 大小=%{public}d字节 (< 1字节) - 仍将转发",
+                         packetCount, readResult);
         }
 
         // 读取到虚拟网卡的数据，通过udp隧道，发送给服务器
         if (fdInfo.tunnelFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunnelFd: %{public}d, stopping send loop", fdInfo.tunnelFd);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "❌ 隧道FD无效: tunnelFd=%{public}d, 数据包 #%{public}d 无法转发，线程退出",
+                         fdInfo.tunnelFd, packetCount);
+            g_packetsDropped++;
             break;
         }
+        
+        // 🔥 确保所有数据包都被转发（无论大小、版本、协议）
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                     "🔄 准备转发数据包 #%{public}d: 大小=%{public}d字节 -> VPN服务器",
+                     packetCount, readResult);
 
         // 🔥 发送前记录详细信息（IPv4和IPv6）
+        // 注意：即使数据包太小或格式异常，也会被转发（因为sendto不检查内容）
         if (readResult >= 20) {
             uint8_t version = (buffer[0] >> 4) & 0x0F;
             if (version == 4) {
@@ -306,7 +334,17 @@ void HandleReadTunfd(FdInfo fdInfo)
                              "🚀 转发IPv6数据包: %{public}s -> %{public}s (协议=%{public}s, %{public}d字节) -> VPN服务器 %{public}s:%{public}d",
                              srcIP, dstIP, protocolName, readResult,
                              inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+            } else {
+                // 数据包太小（< 20字节），无法解析，但仍会转发
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "🚀 转发异常数据包: 大小=%{public}d字节 (< 20字节，无法解析) -> VPN服务器 %{public}s:%{public}d",
+                             readResult, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
             }
+        } else {
+            // readResult < 20，数据包太小，但仍会转发
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🚀 转发异常数据包: 大小=%{public}d字节 (< 20字节) -> VPN服务器 %{public}s:%{public}d",
+                         readResult, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
         }
         
         int sendResult = sendto(fdInfo.tunnelFd, buffer, readResult, 0,
@@ -319,15 +357,23 @@ void HandleReadTunfd(FdInfo fdInfo)
                          "❌ 转发失败: 数据包 #%{public}d 发送到服务器 %{public}s:%{public}d 失败, ret=%{public}d, error=%{public}s",
                          packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
                          sendResult, strerror(errno));
+            g_packetsSendFailed++;
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "📊 转发统计: 读取=%{public}d, 转发成功=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
+                         g_packetsReadFromTun, g_packetsForwarded, g_packetsSendFailed, g_packetsDropped);
             continue;
         }
 
         g_packetsSent++;
+        g_packetsForwarded++;  // 统计成功转发的数据包
         NETMANAGER_VPN_LOGI("✅ PACKET #%d: Sent %{public}d bytes to server (total sent: %{public}d, responses: %{public}d)", 
                            packetCount, sendResult, g_packetsSent, g_responsesReceived);
         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
                      "✅ 转发成功: 数据包 #%{public}d 已发送 %{public}d 字节到VPN服务器 (总计发送: %{public}d, 收到响应: %{public}d)",
                      packetCount, sendResult, g_packetsSent, g_responsesReceived);
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                     "📊 转发统计: 读取=%{public}d, 转发成功=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
+                     g_packetsReadFromTun, g_packetsForwarded, g_packetsSendFailed, g_packetsDropped);
         
         // 每10个数据包输出一次统计信息
         if (g_packetsSent % 10 == 0) {
@@ -335,6 +381,23 @@ void HandleReadTunfd(FdInfo fdInfo)
                          g_ipv4Packets, g_ipv4TcpPackets, g_ipv6Packets, g_ipv6TcpPackets, g_packetsSent, g_responsesReceived);
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🌐 浏览器流量统计: HTTP(端口80)=%{public}d HTTPS(端口443)=%{public}d",
                          g_httpPackets, g_httpsPackets);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🔍 转发完整性检查: 从TUN读取=%{public}d, 成功转发=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
+                         g_packetsReadFromTun, g_packetsForwarded, g_packetsSendFailed, g_packetsDropped);
+            
+            // 🔥 关键检查：确保所有读取的数据包都被转发
+            // 关系：g_packetsReadFromTun = g_packetsForwarded + g_packetsSendFailed + g_packetsDropped
+            int totalProcessed = g_packetsForwarded + g_packetsSendFailed;
+            if (g_packetsReadFromTun != totalProcessed) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "[VPN客户端] ⚠️⚠️⚠️ 警告：转发不完整！读取=%{public}d, 已处理=%{public}d (成功=%{public}d + 失败=%{public}d), 差异=%{public}d",
+                             g_packetsReadFromTun, totalProcessed, g_packetsForwarded, g_packetsSendFailed, 
+                             g_packetsReadFromTun - totalProcessed);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "[VPN客户端] ⚠️ 可能有数据包在读取后、发送前被丢弃或遗漏！");
+            } else {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "[VPN客户端] ✅ 转发完整性验证通过：所有从TUN读取的数据包都已处理（成功转发或发送失败）");
+            }
             
             if (g_ipv4TcpPackets == 0 && g_ipv6TcpPackets == 0) {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ⚠️ ⚠️ ⚠️ 警告：没有检测到TCP数据包（浏览器流量）！");
