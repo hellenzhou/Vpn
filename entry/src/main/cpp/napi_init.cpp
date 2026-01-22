@@ -153,6 +153,11 @@ void HandleReadTunfd(FdInfo fdInfo)
                         uint16_t srcPort = (buffer[20] << 8) | buffer[21];
                         uint16_t dstPort = (buffer[22] << 8) | buffer[23];
                         
+                        // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                     "[TUN→代理] 源IP:%{public}s 目的IP:%{public}s 源端口:%{public}d 目的端口:%{public}d 协议:TCP 大小:%{public}d字节",
+                                     srcIP, dstIP, srcPort, dstPort, readResult);
+                        
                         // 追踪HTTP/HTTPS流量
                         const char* serviceLabel = "";
                         bool isHttpTraffic = false;
@@ -190,6 +195,11 @@ void HandleReadTunfd(FdInfo fdInfo)
                         uint16_t srcPort = (buffer[20] << 8) | buffer[21];
                         uint16_t dstPort = (buffer[22] << 8) | buffer[23];
                         
+                        // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                     "[TUN→代理] 源IP:%{public}s 目的IP:%{public}s 源端口:%{public}d 目的端口:%{public}d 协议:UDP 大小:%{public}d字节",
+                                     srcIP, dstIP, srcPort, dstPort, readResult);
+                        
                         // 🔥 详细记录DNS查询（UDP端口53）
                         if (dstPort == 53) {
                             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
@@ -205,11 +215,19 @@ void HandleReadTunfd(FdInfo fdInfo)
                     }
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 UDP %s -> %s", packetCount, srcIP, dstIP);
                 } else if (protocol == 1) {  // ICMP
+                    // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                 "[TUN→代理] 源IP:%{public}s 目的IP:%{public}s 源端口:0 目的端口:0 协议:ICMP 大小:%{public}d字节",
+                                 srcIP, dstIP, readResult);
                     OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                                  "🏓 ICMP数据包: %{public}s -> %{public}s (大小=%{public}d字节)",
                                  srcIP, dstIP, readResult);
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 ICMP %s -> %s", packetCount, srcIP, dstIP);
                 } else {
+                    // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                 "[TUN→代理] 源IP:%{public}s 目的IP:%{public}s 源端口:0 目的端口:0 协议:%{public}d 大小:%{public}d字节",
+                                 srcIP, dstIP, protocol, readResult);
                     OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                                  "📦 其他协议数据包: 协议=%{public}d %{public}s -> %{public}s (大小=%{public}d字节)",
                                  protocol, srcIP, dstIP, readResult);
@@ -664,17 +682,22 @@ void HandleTcpReceived(FdInfo fdInfo)
         g_responsesReceived++;
         
         // 🔥 详细记录接收到的响应（IPv4和IPv6）
+        char srcIP[40] = {0}, dstIP[40] = {0};
+        uint16_t srcPort = 0, dstPort = 0;
+        uint8_t protocol = 0;
+        const char* protocolName = "未知";
+        
         if (length >= 20) {
             uint8_t version = (buffer[0] >> 4) & 0x0F;
             if (version == 4) {
-                uint8_t protocol = buffer[9];
-                char srcIP[16], dstIP[16];
+                protocol = buffer[9];
                 snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
                 snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
                 
                 if (protocol == 17 && length >= 28) {  // UDP
-                    uint16_t srcPort = (buffer[20] << 8) | buffer[21];
-                    uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                    protocolName = "UDP";
+                    srcPort = (buffer[20] << 8) | buffer[21];
+                    dstPort = (buffer[22] << 8) | buffer[23];
                     if (srcPort == 53) {
                         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                                      "📥 收到DNS响应: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, %{public}d字节) <- VPN服务器",
@@ -685,8 +708,9 @@ void HandleTcpReceived(FdInfo fdInfo)
                                      srcIP, srcPort, dstIP, dstPort, length);
                     }
                 } else if (protocol == 6 && length >= 40) {  // TCP
-                    uint16_t srcPort = (buffer[20] << 8) | buffer[21];
-                    uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                    protocolName = "TCP";
+                    srcPort = (buffer[20] << 8) | buffer[21];
+                    dstPort = (buffer[22] << 8) | buffer[23];
                     const char* serviceType = "";
                     if (srcPort == 80) serviceType = " [HTTP响应]";
                     else if (srcPort == 443) serviceType = " [HTTPS响应]";
@@ -694,17 +718,18 @@ void HandleTcpReceived(FdInfo fdInfo)
                                  "📥 收到TCP响应: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (%{public}d字节) <- VPN服务器",
                                  srcIP, srcPort, dstIP, dstPort, serviceType, length);
                 } else if (protocol == 1) {  // ICMP
+                    protocolName = "ICMP";
                     OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                                  "📥 收到ICMP响应: %{public}s -> %{public}s (%{public}d字节) <- VPN服务器",
                                  srcIP, dstIP, length);
                 } else {
+                    snprintf(srcIP, sizeof(srcIP), "协议%d", protocol);
                     OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                                  "📥 收到响应: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节) <- VPN服务器",
                                  protocol, srcIP, dstIP, length);
                 }
             } else if (version == 6 && length >= 40) {  // IPv6
                 uint8_t nextHeader = buffer[6];
-                char srcIP[40], dstIP[40];
                 snprintf(srcIP, sizeof(srcIP), "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
                          buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15],
                          buffer[16], buffer[17], buffer[18], buffer[19], buffer[20], buffer[21], buffer[22], buffer[23]);
@@ -712,7 +737,6 @@ void HandleTcpReceived(FdInfo fdInfo)
                          buffer[24], buffer[25], buffer[26], buffer[27], buffer[28], buffer[29], buffer[30], buffer[31],
                          buffer[32], buffer[33], buffer[34], buffer[35], buffer[36], buffer[37], buffer[38], buffer[39]);
                 
-                const char* protocolName = "";
                 if (nextHeader == 6) protocolName = "TCP";
                 else if (nextHeader == 17) protocolName = "UDP";
                 else if (nextHeader == 58) protocolName = "ICMPv6";
@@ -737,6 +761,17 @@ void HandleTcpReceived(FdInfo fdInfo)
                          "❌ TUN设备无效: tunFd=%{public}d, 无法写入响应", fdInfo.tunFd);
             break;
         }
+
+        // 🔥 ZHOUB日志：代理成功后给TUN设备（包含数据前64字节的十六进制）
+        char dataHex[129] = {0};  // 64字节 * 2 + 1
+        int hexLen = length < 64 ? length : 64;
+        for (int i = 0; i < hexLen; i++) {
+            snprintf(dataHex + i * 2, 3, "%02x", buffer[i]);
+        }
+        
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                     "[代理→TUN] 源IP:%{public}s 目的IP:%{public}s 源端口:%{public}d 目的端口:%{public}d 协议:%{public}s 大小:%{public}d字节 数据:%{public}s",
+                     srcIP, dstIP, srcPort, dstPort, protocolName, length, dataHex);
 
         int ret = write(fdInfo.tunFd, buffer, length);
         if (ret <= 0) {
