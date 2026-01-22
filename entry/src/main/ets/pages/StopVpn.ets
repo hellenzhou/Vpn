@@ -45,7 +45,7 @@ struct StopVpn {
 
   // [StartExclude stop_vpn_extension_ability]
   @State flag: string = 'wait';
-  @State blockedAppName: string = 'com.example.baidumyapplication';
+  @State blockedAppName: string = 'com.hellen.vpnserver';
   // [Start stop_vpn_extension_ability_on_destroy]
   private context = this.getUIContext().getHostContext() as common.VpnExtensionContext;
   private vpnConnection: vpnExtension.VpnConnection = vpnExtension.createVpnConnection(this.context);

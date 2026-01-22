@@ -159,6 +159,55 @@ struct StartVpn {
           .fontSize(BUTTON_FONT_SIZE)
           .margin(BUTTON_MARGIN);
         // [EndExclude start_vpn_extension_ability]
+        // 🔥 橘色一键启动按钮：自动执行 创建隧道→保护隧道→开启VPN
+        Button('🚀 一键启动VPN (创建隧道→保护隧道→开启VPN)')
+          .onClick(() => {
+            hilog.info(0x0000, 'ZBQ', '[主页] ========== 一键启动VPN流程开始 ==========');
+            hilog.info(0x0000, 'ZBQ', '[主页] 🔥 点击橘色按钮，开始自动执行完整VPN启动流程');
+            hilog.info(0x0000, 'ZBQ', '[主页] 📋 流程步骤：');
+            hilog.info(0x0000, 'ZBQ', '[主页]   1️⃣ 启动VPN扩展能力');
+            hilog.info(0x0000, 'ZBQ', '[主页]   2️⃣ 扩展能力onCreate()自动创建VpnConnection');
+            hilog.info(0x0000, 'ZBQ', '[主页]   3️⃣ 扩展能力自动调用CreateTunnel()创建UDP隧道');
+            hilog.info(0x0000, 'ZBQ', '[主页]   4️⃣ 扩展能力自动调用Protect()保护UDP隧道');
+            hilog.info(0x0000, 'ZBQ', '[主页]   5️⃣ 扩展能力自动调用SetupVpn()创建VPN连接');
+            hilog.info(0x0000, 'ZBQ', '[主页]   6️⃣ 系统自动创建TUN设备并配置路由');
+            hilog.info(0x0000, 'ZBQ', '[主页]   7️⃣ 启动数据转发线程');
+            hilog.info(0x0000, 'ZBQ', '[主页] ==========================================');
+            
+            // [StartExclude start_vpn_extension_ability]
+            try {
+              hilog.info(0x0000, 'ZBQ', '[主页] 📞 步骤1: 调用 vpnExtension.startVpnExtensionAbility()...');
+              // [EndExclude start_vpn_extension_ability]
+              vpnExtension.startVpnExtensionAbility(want)
+              // [StartExclude start_vpn_extension_ability]
+                .then(() => {
+                  hilog.info(0x0000, 'ZBQ', '[主页] ✅ 步骤1完成: VPN扩展能力启动成功');
+                  hilog.info(0x0000, 'ZBQ', '[主页] ⏰ 扩展能力的onCreate()将自动执行后续步骤');
+                  hilog.info(0x0000, 'ZBQ', '[主页] 🔍 请查看Hilog中的[扩展能力]日志，查看完整流程：');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   - [扩展能力] onCreate() 开始执行');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   - [扩展能力] CreateTunnel() 开始执行');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   - [扩展能力] Protect() 开始执行');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   - [扩展能力] SetupVpn() 开始执行');
+                  showToast('✅ VPN扩展能力已启动\n自动执行：创建隧道→保护隧道→开启VPN', BUTTON_SUCCESS_MESSAGE);
+                  this.flag = 'Pass';
+                })
+            } catch (err) {
+              hilog.error(0x0000, 'ZBQ', '[主页] ❌ 步骤1失败: VPN扩展能力启动失败');
+              hilog.error(0x0000, 'ZBQ', '[主页] ❌ 错误: %{public}s', JSON.stringify(err) ?? '');
+              showToast('❌ 启动失败: ' + JSON.stringify(err), BUTTON_SUCCESS_MESSAGE);
+              this.flag = 'Error';
+            }
+            // [EndExclude start_vpn_extension_ability]
+          })
+          .width('70%')
+          // [StartExclude start_vpn_extension_ability]
+          .id(ComponentId.START_VPN_EXT_BUTTON)
+          // [EndExclude start_vpn_extension_ability]
+          .fontSize(BUTTON_FONT_SIZE)
+          .margin(BUTTON_MARGIN)
+          .backgroundColor(0xFF6B35) // 🔥 橘色，突出显示一键启动按钮
+        
+        // 保留原有的启动按钮（用于测试）
         Button($r('app.string.start_vpnExt'))
           .onClick(() => {
             // [StartExclude start_vpn_extension_ability]

@@ -116,24 +116,62 @@ struct Index {
         // 🔥 测试 Extension Ability onCreate()
         Button('🧪 启动VPN Extension Ability')
           .onClick(() => {
-            hilog.info(0x0000, 'ZBQ', '[ZBQ] [主页] 准备启动 VPN Extension Ability...');
+            hilog.info(0x0000, 'ZBQ', '[主页] ========== 准备启动 VPN Extension Ability ==========');
+            hilog.info(0x0000, 'ZBQ', '[主页] 🔥 按钮点击事件触发');
+            
             let want: Want = {
               deviceId: '',
               bundleName: 'com.samples.vpncontrol_case',
               abilityName: 'MyVpnExtAbility',
             };
             
+            hilog.info(0x0000, 'ZBQ', '[主页] 📋 Want配置:');
+            hilog.info(0x0000, 'ZBQ', '[主页]   - bundleName: %{public}s', want.bundleName);
+            hilog.info(0x0000, 'ZBQ', '[主页]   - abilityName: %{public}s', want.abilityName);
+            hilog.info(0x0000, 'ZBQ', '[主页] 📞 调用 vpnExtension.startVpnExtensionAbility()...');
+            hilog.info(0x0000, 'ZBQ', '[主页] ⏰ 开始时间: %{public}s', new Date().toISOString());
+            
+            // 🔥 添加超时检查
+            let startTime = Date.now();
             vpnExtension.startVpnExtensionAbility(want)
               .then(() => {
-                hilog.info(0x0000, 'ZBQ', '[ZBQ] [主页] ✅ VPN Extension Ability 启动成功！');
-                hilog.info(0x0000, 'ZBQ', '[ZBQ] [主页] 🔍 请查看 Hilog 中的 [扩展能力] 日志！');
+                let elapsed = Date.now() - startTime;
+                hilog.info(0x0000, 'ZBQ', '[主页] ✅ startVpnExtensionAbility() Promise resolved (耗时: %{public}dms)', elapsed);
+                hilog.info(0x0000, 'ZBQ', '[主页] ✅ VPN Extension Ability 启动成功！');
+                hilog.info(0x0000, 'ZBQ', '[主页] 🔍 请查看 Hilog 中的 [扩展能力] 日志！');
+                hilog.info(0x0000, 'ZBQ', '[主页] ⏰ 注意：扩展能力的onCreate()和onRequest()可能稍后才会被调用');
+                hilog.info(0x0000, 'ZBQ', '[主页] ⏰ 如果看不到[扩展能力]日志，请等待几秒后再次查看');
+                hilog.info(0x0000, 'ZBQ', '[主页] 📋 预期日志顺序：');
+                hilog.info(0x0000, 'ZBQ', '[主页]   1. [扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载');
+                hilog.info(0x0000, 'ZBQ', '[主页]   2. [扩展能力] 🔥🔥🔥 onCreate() 开始执行');
+                hilog.info(0x0000, 'ZBQ', '[主页]   3. [扩展能力] 🔥🔥🔥 onRequest() 开始执行');
+                
+                // 🔥 延迟检查：等待扩展能力启动
+                setTimeout(() => {
+                  hilog.info(0x0000, 'ZBQ', '[主页] ⏰ 延迟检查：已等待3秒，检查扩展能力是否已启动...');
+                  hilog.info(0x0000, 'ZBQ', '[主页] 🔍 如果仍然看不到[扩展能力]日志，可能的原因：');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   1. 扩展能力进程启动失败（检查module.json5配置）');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   2. onCreate()未被调用（检查扩展能力类型配置）');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   3. 日志被过滤（检查Hilog过滤条件）');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   4. 扩展能力运行在独立进程（检查进程日志）');
+                  hilog.info(0x0000, 'ZBQ', '[主页] 📝 排查建议：');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   - 在Hilog中搜索 "扩展能力" 或 "ZBQ"');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   - 检查是否有错误日志（搜索 "ERROR" 或 "❌"）');
+                  hilog.info(0x0000, 'ZBQ', '[主页]   - 确认module.json5中extensionAbilities配置正确');
+                }, 3000);
+                
                 showToast('✅ Extension Ability 已启动\n请查看 Hilog [扩展能力] 日志', TOAST_DURATION);
               })
               .catch((err: Error) => {
-                hilog.error(0x0000, 'ZBQ', '[ZBQ] [主页] ❌ VPN Extension Ability 启动失败: %{public}s', 
-                  JSON.stringify(err) ?? '');
+                hilog.error(0x0000, 'ZBQ', '[主页] ❌ startVpnExtensionAbility() Promise rejected');
+                hilog.error(0x0000, 'ZBQ', '[主页] ❌ VPN Extension Ability 启动失败');
+                hilog.error(0x0000, 'ZBQ', '[主页] ❌ 错误对象: %{public}s', JSON.stringify(err) ?? '');
+                hilog.error(0x0000, 'ZBQ', '[主页] ❌ 错误消息: %{public}s', err?.message ?? '');
+                hilog.error(0x0000, 'ZBQ', '[主页] ❌ 错误堆栈: %{public}s', err?.stack ?? '');
                 showToast('❌ 启动失败: ' + JSON.stringify(err), TOAST_DURATION);
               });
+            
+            hilog.info(0x0000, 'ZBQ', '[主页] ========== 启动请求已发送 ==========');
           })
           .width('70%')
           .fontSize(BUTTON_FONT_SIZE)

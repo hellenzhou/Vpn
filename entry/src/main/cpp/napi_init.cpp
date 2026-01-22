@@ -30,6 +30,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <errno.h>
  
 #define BUFFER_SIZE 2048
  
@@ -612,7 +613,7 @@ void HandleReadTunfd(FdInfo fdInfo)
             
             // 🔥 关键检查：确保所有读取的数据包都被转发
             // 关系：g_packetsReadFromTun = g_packetsForwarded + g_packetsSendFailed + g_packetsDropped
-            int totalProcessed = g_packetsForwarded + g_packetsSendFailed;
+            // 注意：totalProcessed已在上面定义，这里直接使用
             if (g_packetsReadFromTun != totalProcessed) {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
                              "[VPN客户端] ⚠️⚠️⚠️ 警告：转发不完整！读取=%{public}d, 已处理=%{public}d (成功=%{public}d + 失败=%{public}d), 差异=%{public}d",

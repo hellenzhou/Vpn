@@ -27,6 +27,16 @@ import vpn_client from 'libentry.so';
 const TAG: string = '[MyVpnExtAbility]';
 
 export default class MyVpnExtAbility extends VpnExtensionAbility {
+  // 🔥 类初始化时输出日志（类加载时执行）
+  constructor() {
+    super();
+    // 🔥 使用多种日志方式确保能看到
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 扩展能力类构造函数执行');
+    hilog.info(0x0000, 'testTag', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
+    console.log('[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
+  }
+  
   private vpnConnection: vpnExtension.VpnConnection | null = null;
   // ⚠️ 重要：VPN服务器IP配置
   // - 部署机器IP：10.20.23.147
@@ -49,12 +59,25 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   }
 
   onCreate(want: Want) {
+    // 🔥 最开始的日志，使用多种方式确保能看到
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
+    hilog.info(0x0000, 'testTag', '[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
+    console.log('[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onCreate() 被调用 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] - abilityName: %{public}s', want.abilityName ?? '');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 测试：扩展能力进程已启动！');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 按照官方DEMO在onCreate()中创建VPN连接');
-    super.onCreate(want);
+    
+    try {
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 📞 准备调用 super.onCreate(want)...');
+      super.onCreate(want);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ super.onCreate(want) 调用成功');
+    } catch (error) {
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ super.onCreate(want) 调用失败: %{public}s', JSON.stringify(error));
+      hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
+      return;
+    }
     
     // 🔥 按照官方DEMO：在onCreate()中创建VPN连接
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 检查Context有效性...');
@@ -72,8 +95,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
       
       // 🔥 按照正确流程：先创建UDP隧道，再保护隧道，最后配置VPN
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 开始VPN初始化流程...');
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔹 步骤1: 创建UDP隧道...');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== 开始VPN完整启动流程 ==========');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 一键启动流程：创建隧道→保护隧道→开启VPN');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔹 步骤1/3: 创建UDP隧道 (CreateTunnel)...');
       this.CreateTunnel();
     } catch (error) {
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ Failed to create VpnConnection: %{public}s', JSON.stringify(error));
@@ -84,6 +108,8 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   }
 
   onRequest(want: Want, startId: number) {
+    // 🔥 最开始的日志，确保能看到onRequest是否被调用
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 onRequest() 开始执行 🔥🔥🔥');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onRequest() 被调用 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 测试：onRequest()被调用了！');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅✅✅ 确认：onRequest() 已被系统调用 ✅✅✅');
@@ -159,7 +185,8 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
 
   // 创建隧道的方法
   CreateTunnel() {
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== CreateTunnel() 开始执行 ==========');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 CreateTunnel() 开始执行 🔥🔥🔥');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== 步骤1/3: 创建UDP隧道 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 📋 当前配置:');
     hilog.info(0x0000, 'ZBQ', '[扩展能力]   - VPN服务器IP: %{public}s', this.vpnServerIp);
     hilog.info(0x0000, 'ZBQ', '[扩展能力]   - VPN服务器端口: 8888');
@@ -186,17 +213,15 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         return;
       }
       
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ Tunnel created, FD: %{public}d', tunnelFd);
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 隧道创建成功，准备调用 Protect()...');
-      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔧 准备设置全局变量 gTunnelFd...');
-      hilog.info(0x0000, 'ZBQ', '[扩展能力]   当前 gTunnelFd = %{public}d', gTunnelFd);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ 步骤1/3完成: UDP隧道创建成功, FD=%{public}d', tunnelFd);
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔧 设置全局变量 gTunnelFd...');
       setTunnelFd(tunnelFd);
       hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ gTunnelFd已设置为: %{public}d', tunnelFd);
-      hilog.info(0x0000, 'ZBQ', '[扩展能力]   验证 gTunnelFd = %{public}d', gTunnelFd);
       if (gTunnelFd !== tunnelFd) {
         hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 警告: gTunnelFd设置后验证失败！');
         hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 期望值: %{public}d, 实际值: %{public}d', tunnelFd, gTunnelFd);
       }
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔹 步骤2/3: 保护UDP隧道 (Protect)...');
     } catch (error) {
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ udpConnect() 异常: %{public}s', JSON.stringify(error));
       hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
@@ -219,7 +244,8 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
 
   // 保护隧道的方法
   Protect() {
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== Protect() 开始执行 ==========');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 Protect() 开始执行 🔥🔥🔥');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== 步骤2/3: 保护UDP隧道 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] step2: 准备保护UDP隧道');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 当前 gTunnelFd = %{public}d', gTunnelFd);
     if (gTunnelFd < 0) {
@@ -229,8 +255,8 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     if (this.vpnConnection) {
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 调用 vpnConnection.protect(%{public}d)...', gTunnelFd);
       this.vpnConnection.protect(gTunnelFd).then(() => {
-        hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ vpn Protect Success，UDP隧道已保护');
-        hilog.info(0x0000, 'ZBQ', '[扩展能力] 准备调用 SetupVpn() 创建VPN连接...');
+        hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ 步骤2/3完成: UDP隧道已保护');
+        hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔹 步骤3/3: 创建VPN连接 (SetupVpn)...');
         this.SetupVpn();
       }).catch((err: Error) => {
         hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ vpn Protect Failed: %{public}s', JSON.stringify(err) ?? '');
@@ -243,8 +269,8 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
 
   // 设置VPN网络配置的方法
   SetupVpn() {
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== SetupVpn() 开始执行 ==========');
-    hilog.info(0x0000, 'ZBQ', '[扩展能力] step3: 准备创建VPN连接');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 SetupVpn() 开始执行 🔥🔥🔥');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== 步骤3/3: 创建VPN连接 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 当前状态: gTunFd=%{public}d, gTunnelFd=%{public}d', gTunFd, gTunnelFd);
 
     class Address {
@@ -392,17 +418,24 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       this.vpnConnection.create(config)
         // [StartExclude vpn_control_case_extention_ability]
         .then((data: number) => {
-          hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ VPN连接创建成功，TUN FD: %{public}d', data);
-          hilog.info(0x0000, 'ZBQ', '[扩展能力] 设置全局变量 gTunFd = %{public}d', data);
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ 步骤3/3完成: VPN连接创建成功，TUN FD: %{public}d', data);
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔧 设置全局变量 gTunFd = %{public}d', data);
           setTunFd(data);
           hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ gTunFd已设置为: %{public}d', data);
-          hilog.info(0x0000, 'ZBQ', '[扩展能力] 当前状态: gTunFd=%{public}d, gTunnelFd=%{public}d', gTunFd, gTunnelFd);
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 当前状态: gTunFd=%{public}d, gTunnelFd=%{public}d', gTunFd, gTunnelFd);
           if (gTunnelFd < 0) {
             hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 警告: gTunnelFd无效 (%{public}d)，数据转发可能失败', gTunnelFd);
           }
-          hilog.info(0x0000, 'ZBQ', '[扩展能力] 调用 vpn_client.startVpn(%{public}d, %{public}d)...', gTunFd, gTunnelFd);
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] 🚀 启动数据转发线程: vpn_client.startVpn(%{public}d, %{public}d)...', gTunFd, gTunnelFd);
           vpn_client.startVpn(gTunFd, gTunnelFd);
-          hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ VPN数据转发线程已启动');
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅✅✅ VPN数据转发线程已启动 ✅✅✅');
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== VPN完整启动流程完成 ==========');
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] 🎉 一键启动成功：创建隧道✅ → 保护隧道✅ → 开启VPN✅');
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] 📋 VPN状态：');
+          hilog.info(0x0000, 'ZBQ', '[扩展能力]   - TUN设备: FD=%{public}d (已创建)', gTunFd);
+          hilog.info(0x0000, 'ZBQ', '[扩展能力]   - UDP隧道: FD=%{public}d (已创建并保护)', gTunnelFd);
+          hilog.info(0x0000, 'ZBQ', '[扩展能力]   - 数据转发: 已启动 (TUN ↔ UDP隧道)');
+          hilog.info(0x0000, 'ZBQ', '[扩展能力]   - 流量劫持: 已启用 (所有流量进入TUN)');
         })
         // [EndExclude vpn_control_case_extention_ability]
         .catch((err: BusinessError) => {
