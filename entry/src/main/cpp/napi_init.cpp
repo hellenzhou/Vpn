@@ -70,6 +70,8 @@ static int g_packetsReadFromTun = 0;  // 从TUN读取的数据包总数
 static int g_packetsForwarded = 0;  // 成功转发的数据包总数
 static int g_packetsDropped = 0;  // 被丢弃的数据包总数（读取失败、发送失败等）
 static int g_packetsSendFailed = 0;  // 发送失败的数据包数
+static time_t g_vpnStartTime = 0;  // VPN启动时间
+static int g_trafficCheckInterval = 0;  // 流量检查间隔计数器
 // 获取对应字符串数据, 用于获取udp server 的IP地址
 static constexpr const int MAX_STRING_LENGTH = 1024;
 
@@ -94,6 +96,11 @@ void HandleReadTunfd(FdInfo fdInfo)
     OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] TUN读取线程已启动 tunFd=%{public}d tunnelFd=%{public}d 服务器=%{public}s:%{public}d",
                  fdInfo.tunFd, fdInfo.tunnelFd,
                  inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+    
+    // 🔥 记录VPN启动时间，用于流量劫持检查
+    g_vpnStartTime = time(nullptr);
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                 "🔍 [流量劫持检查] VPN启动时间: %{public}ld, 开始监控流量劫持情况", g_vpnStartTime);
 
     uint8_t buffer[BUFFER_SIZE] = {0};
     int packetCount = 0;
@@ -266,8 +273,18 @@ void HandleReadTunfd(FdInfo fdInfo)
         
         // 🔥 确保所有数据包都被转发（无论大小、版本、协议）
         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                     "🔄 准备转发数据包 #%{public}d: 大小=%{public}d字节 -> VPN服务器",
-                     packetCount, readResult);
+                     "🔄 准备转发数据包 #%{public}d: 大小=%{public}d字节 -> VPN服务器 %{public}s:%{public}d",
+                     packetCount, readResult, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+        
+        // 🔥 转发前检查：隧道FD和服务器地址有效性
+        if (fdInfo.tunnelFd < 0) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "❌ [转发验证] 隧道FD无效: %{public}d，无法转发数据包", fdInfo.tunnelFd);
+        }
+        if (fdInfo.serverAddr.sin_addr.s_addr == 0) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "❌ [转发验证] 服务器地址无效: 0.0.0.0，无法转发数据包");
+        }
 
         // 🔥 发送前记录详细信息（IPv4和IPv6）
         // 注意：即使数据包太小或格式异常，也会被转发（因为sendto不检查内容）
@@ -350,16 +367,42 @@ void HandleReadTunfd(FdInfo fdInfo)
         int sendResult = sendto(fdInfo.tunnelFd, buffer, readResult, 0,
             reinterpret_cast<struct sockaddr*>(&fdInfo.serverAddr), sizeof(fdInfo.serverAddr));
         if (sendResult <= 0) {
+            int errno_save = errno;
             NETMANAGER_VPN_LOGE("❌ Failed to send packet #%d to server[%{public}s:%{public}d], ret: %{public}d, error: %{public}s",
                                 packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
-                                sendResult, strerror(errno));
+                                sendResult, strerror(errno_save));
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                         "❌ 转发失败: 数据包 #%{public}d 发送到服务器 %{public}s:%{public}d 失败, ret=%{public}d, error=%{public}s",
-                         packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
-                         sendResult, strerror(errno));
+                         "❌ [转发失败] 数据包 #%{public}d 发送到服务器 %{public}s:%{public}d 失败",
+                         packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "❌ [转发失败] 错误详情: ret=%{public}d, errno=%{public}d (%{public}s)",
+                         sendResult, errno_save, strerror(errno_save));
+            
+            // 🔥 详细的错误诊断
+            if (errno_save == ECONNREFUSED) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ [转发失败] 诊断: 连接被拒绝 - 代理服务器可能未运行或未监听端口");
+            } else if (errno_save == ENETUNREACH) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ [转发失败] 诊断: 网络不可达 - 无法连接到代理服务器");
+            } else if (errno_save == EHOSTUNREACH) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ [转发失败] 诊断: 主机不可达 - 代理服务器地址可能错误");
+            } else if (errno_save == EAGAIN || errno_save == EWOULDBLOCK) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发失败] 诊断: 资源暂时不可用 - 可能是UDP缓冲区满，稍后重试");
+            } else if (errno_save == EBADF) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ [转发失败] 诊断: 文件描述符无效 - tunnelFd=%{public}d 可能已关闭",
+                             fdInfo.tunnelFd);
+            } else {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ [转发失败] 诊断: 未知错误 - 请检查网络连接和代理服务器状态");
+            }
+            
             g_packetsSendFailed++;
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                         "📊 转发统计: 读取=%{public}d, 转发成功=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
+                         "📊 [转发统计] 读取=%{public}d, 转发成功=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
                          g_packetsReadFromTun, g_packetsForwarded, g_packetsSendFailed, g_packetsDropped);
             continue;
         }
@@ -377,10 +420,193 @@ void HandleReadTunfd(FdInfo fdInfo)
         
         // 每10个数据包输出一次统计信息
         if (g_packetsSent % 10 == 0) {
+            g_trafficCheckInterval++;
+            time_t currentTime = time(nullptr);
+            time_t vpnUptime = currentTime - g_vpnStartTime;
+            
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📊 数据包统计: IPv4总数=%{public}d IPv4 TCP=%{public}d IPv6总数=%{public}d IPv6 TCP=%{public}d 发送=%{public}d 响应=%{public}d",
                          g_ipv4Packets, g_ipv4TcpPackets, g_ipv6Packets, g_ipv6TcpPackets, g_packetsSent, g_responsesReceived);
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🌐 浏览器流量统计: HTTP(端口80)=%{public}d HTTPS(端口443)=%{public}d",
                          g_httpPackets, g_httpsPackets);
+            
+            // 🔥 流量劫持完整性检查
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [流量劫持检查] ========== 第%{public}d次检查 (VPN运行时间: %{public}ld秒) ==========",
+                         g_trafficCheckInterval, vpnUptime);
+            
+            // 检查1: 是否有TCP流量（浏览器等应用）
+            if (g_ipv4TcpPackets == 0 && g_ipv6TcpPackets == 0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️⚠️⚠️ [流量劫持检查] 警告：没有检测到TCP数据包！");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [流量劫持检查] 可能原因：");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   1. VPN路由表未生效 - 流量未进入TUN设备");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   2. 应用流量绕过VPN - 可能使用了trustedApplications");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   3. 系统路由表配置错误 - 默认路由未指向vpn-tun");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   4. VPN连接未正确建立 - vpnConnection.create()可能失败");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "🔍 [流量劫持检查] 建议：检查VPN扩展能力日志，确认vpnConnection.create()是否成功");
+            } else {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [流量劫持检查] 检测到TCP流量：IPv4 TCP=%{public}d, IPv6 TCP=%{public}d",
+                             g_ipv4TcpPackets, g_ipv6TcpPackets);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [流量劫持检查] 说明：VPN路由表已生效，部分流量已进入TUN设备");
+            }
+            
+            // 检查2: 是否有UDP流量（DNS等）
+            int totalUdpPackets = g_ipv4Packets - g_ipv4TcpPackets + (g_ipv6Packets - g_ipv6TcpPackets);
+            if (totalUdpPackets == 0 && g_ipv4TcpPackets == 0 && g_ipv6TcpPackets == 0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️⚠️⚠️ [流量劫持检查] 严重警告：完全没有检测到任何流量！");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [流量劫持检查] 这意味着：");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   - 所有应用流量都绕过了VPN");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   - 或者VPN路由表完全未生效");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   - 或者TUN设备未正确创建");
+            } else {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [流量劫持检查] 检测到UDP流量：总计约%{public}d个UDP数据包",
+                             totalUdpPackets);
+            }
+            
+            // 检查3: HTTP/HTTPS流量检查
+            if (g_httpPackets == 0 && g_httpsPackets == 0 && (g_ipv4TcpPackets > 0 || g_ipv6TcpPackets > 0)) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [流量劫持检查] 有TCP流量但无HTTP/HTTPS流量（可能使用其他端口）");
+            } else if (g_httpPackets > 0 || g_httpsPackets > 0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [流量劫持检查] 检测到浏览器流量：HTTP=%{public}d, HTTPS=%{public}d",
+                             g_httpPackets, g_httpsPackets);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [流量劫持检查] 说明：浏览器流量已被VPN成功劫持到TUN设备");
+            }
+            
+            // 检查4: 流量劫持完整性评估
+            if (vpnUptime > 10) {  // VPN运行超过10秒
+                if (g_ipv4TcpPackets == 0 && g_ipv6TcpPackets == 0) {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "❌ [流量劫持检查] 结论：VPN运行%{public}ld秒，但未检测到TCP流量，流量劫持可能失败",
+                                 vpnUptime);
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "❌ [流量劫持检查] 建议：检查VPN配置，确认trustedApplications为空，blockedApplications为空");
+                } else {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "✅ [流量劫持检查] 结论：VPN运行%{public}ld秒，已检测到流量，流量劫持正常工作",
+                                 vpnUptime);
+                }
+            }
+            
+            // 🔥 检查5: 转发到代理服务器的完整性验证
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] ========== 转发到代理服务器验证 ==========");
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] 代理服务器: %{public}s:%{public}d",
+                         inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] 隧道FD: %{public}d (有效=%{public}s)",
+                         fdInfo.tunnelFd, fdInfo.tunnelFd >= 0 ? "是" : "否");
+            
+            // 转发统计
+            int totalProcessed = g_packetsForwarded + g_packetsSendFailed;
+            double forwardSuccessRate = 0.0;
+            if (g_packetsReadFromTun > 0) {
+                forwardSuccessRate = (double)g_packetsForwarded * 100.0 / (double)g_packetsReadFromTun;
+            }
+            
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] 从TUN读取: %{public}d 个数据包", g_packetsReadFromTun);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] 成功转发: %{public}d 个数据包", g_packetsForwarded);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] 转发失败: %{public}d 个数据包", g_packetsSendFailed);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] 转发成功率: %.2f%%", forwardSuccessRate);
+            
+            // 转发完整性检查
+            if (g_packetsReadFromTun == 0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 警告：没有从TUN读取任何数据包，无法验证转发");
+            } else if (g_packetsForwarded == 0 && g_packetsSendFailed > 0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ [转发验证] 严重错误：所有数据包转发都失败！");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "❌ [转发验证] 可能原因：");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   1. 代理服务器未运行或未监听 %{public}s:%{public}d",
+                             inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   2. 网络连接问题 - 无法连接到代理服务器");
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   3. 隧道FD无效 - tunnelFd=%{public}d", fdInfo.tunnelFd);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "   4. UDP socket发送失败 - 检查errno错误码");
+            } else if (g_packetsForwarded == 0 && g_packetsSendFailed == 0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 警告：读取了%{public}d个数据包，但没有任何转发尝试",
+                             g_packetsReadFromTun);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 可能原因：转发逻辑未执行或提前退出");
+            } else if (forwardSuccessRate < 50.0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 警告：转发成功率较低 (%.2f%%)，可能存在问题",
+                             forwardSuccessRate);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 建议：检查网络连接和代理服务器状态");
+            } else if (forwardSuccessRate >= 99.0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [转发验证] 转发成功率优秀 (%.2f%%)，转发工作正常",
+                             forwardSuccessRate);
+            } else {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [转发验证] 转发成功率良好 (%.2f%%)，转发基本正常",
+                             forwardSuccessRate);
+            }
+            
+            // 检查是否有数据包遗漏
+            if (g_packetsReadFromTun != totalProcessed) {
+                int missing = g_packetsReadFromTun - totalProcessed;
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️⚠️⚠️ [转发验证] 警告：有%{public}d个数据包未被处理！",
+                             missing);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 读取=%{public}d, 已处理=%{public}d (成功=%{public}d + 失败=%{public}d)",
+                             g_packetsReadFromTun, totalProcessed, g_packetsForwarded, g_packetsSendFailed);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 这些数据包可能被遗漏，未转发到代理服务器");
+            } else {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [转发验证] 完整性验证通过：所有读取的数据包都已尝试转发");
+            }
+            
+            // 检查响应情况
+            if (g_packetsForwarded > 0 && g_responsesReceived == 0) {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 警告：已转发%{public}d个数据包，但未收到任何响应",
+                             g_packetsForwarded);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ [转发验证] 可能原因：代理服务器未响应或响应处理有问题");
+            } else if (g_packetsForwarded > 0 && g_responsesReceived > 0) {
+                double responseRate = (double)g_responsesReceived * 100.0 / (double)g_packetsForwarded;
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [转发验证] 收到响应: %{public}d个响应 (响应率: %.2f%%)",
+                             g_responsesReceived, responseRate);
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "✅ [转发验证] 说明：代理服务器正常工作，双向通信正常");
+            }
+            
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [转发验证] ==========================================");
+            
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "🔍 [流量劫持检查] ==========================================");
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🔍 转发完整性检查: 从TUN读取=%{public}d, 成功转发=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
                          g_packetsReadFromTun, g_packetsForwarded, g_packetsSendFailed, g_packetsDropped);
             

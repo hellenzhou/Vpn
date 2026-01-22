@@ -351,6 +351,43 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ⚠️ UDP隧道已通过vpnConnection.protect()保护，不会路由循环');
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 📊 ====================================');
       
+      // 🔥 流量劫持配置验证
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 ========== 流量劫持配置验证 ==========');
+      if (config.trustedApplications.length === 0) {
+        hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ trustedApplications为空 - 所有应用流量都将通过VPN');
+      } else {
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ trustedApplications不为空: %{public}s - 这些应用将绕过VPN', JSON.stringify(config.trustedApplications));
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] ⚠️ 警告：trustedApplications中的应用流量不会被劫持到TUN！');
+      }
+      
+      if (config.blockedApplications.length === 0) {
+        hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ blockedApplications为空 - 不阻止任何应用使用VPN');
+      } else {
+        hilog.info(0x0000, 'ZBQ', '[扩展能力] 📋 blockedApplications: %{public}s - 这些应用被阻止使用VPN', JSON.stringify(config.blockedApplications));
+        hilog.info(0x0000, 'ZBQ', '[扩展能力] 📋 注意：blockedApplications中的应用流量不会被劫持到TUN');
+      }
+      
+      if (config.routes.length >= 2) {
+        const ipv4Route = config.routes[0];
+        const ipv6Route = config.routes[1];
+        if (ipv4Route.destination.prefixLength === 0 && ipv4Route.destination.address.address === '0.0.0.0') {
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ IPv4默认路由配置正确: 0.0.0.0/0 → 所有IPv4流量将被劫持');
+        } else {
+          hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ IPv4路由配置错误: 不是0.0.0.0/0，部分IPv4流量可能不会被劫持');
+        }
+        
+        if (ipv6Route.destination.prefixLength === 0 && ipv6Route.destination.address.address === '::') {
+          hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅ IPv6默认路由配置正确: ::/0 → 所有IPv6流量将被劫持');
+        } else {
+          hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ IPv6路由配置错误: 不是::/0，部分IPv6流量可能不会被劫持');
+        }
+      } else {
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] ❌ 路由配置不完整: 路由数量=%{public}d，需要至少2条（IPv4+IPv6）', config.routes.length);
+      }
+      
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 ====================================');
+      hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔍 流量劫持配置验证完成，准备创建VPN连接...');
+      
       hilog.info(0x0000, 'ZBQ', '[扩展能力] 调用 vpnConnection.create(config)...');
       this.vpnConnection.create(config)
         // [StartExclude vpn_control_case_extention_ability]
