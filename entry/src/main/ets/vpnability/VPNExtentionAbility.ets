@@ -46,7 +46,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // - Gateway必须是192.168.100.1（VPN网关）
   // - ⚠️ 不要改成10.8段或其他物理网络段
   private tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP（和工作版本一致）
-  private blockedAppName: string = 'com.hellen.vpnserver';
+  private blockedAppName: string = 'ellen.vpnserver';
 
   // 🔥 新增：测试方法，确保扩展能力能够被调用
   testExtensionAbility() {
@@ -158,7 +158,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   }
 
   onDisconnect(want: Want) {
-   
+
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] - abilityName: %{public}s', want.abilityName);
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
   }
