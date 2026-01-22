@@ -316,13 +316,14 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // 这样所有网络流量（包括DNS）都必须走VPN隧道
         this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         
-        // 🔥🔥🔥 关键：trustedApplications为空表示所有应用流量都通过VPN
-        // vpnConnection.protect()已经保护了UDP隧道，不会产生路由循环
-        this.trustedApplications = [];  // 空数组 = 所有应用都走VPN
+        // 🔥🔥🔥 关键：代理服务器必须绕过VPN，避免路由循环
+        // trustedApplications = 不走VPN的应用列表（绕过VPN，直接访问物理网络）
+        // blockedApplications = 强制走VPN的应用列表
+        this.trustedApplications = ['com.hellen.vpnserver'];  // 代理服务器绕过VPN，避免路由循环
         
         // 🔥🔥🔥 关键配置：blockedApplications为空表示不阻止任何应用
-        // 所有应用的流量都应该被路由到VPN（除非在trustedApplications中）
-        this.blockedApplications = [];  // 空数组 = 不阻止任何应用，都走VPN
+        // 所有不在trustedApplications中的应用都会走VPN
+        this.blockedApplications = [];  // 空数组=所有其他应用强制走VPN
         
         // 🔥 全流量VPN路由配置 - 按照工作版本
         // ⚠️ 不需要127.0.0.0/8排除路由，vpnConnection.protect()已处理UDP隧道保护
