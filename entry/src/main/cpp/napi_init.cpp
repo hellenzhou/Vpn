@@ -147,11 +147,16 @@ void HandleReadTunfd(FdInfo fdInfo)
                         if (isHttpTraffic && g_detailedLogCount < 20) {
                             g_detailedLogCount++;
                             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                                         "🔥🔥🔥 [关键] HTTP/HTTPS连接 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s",
-                                         g_detailedLogCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
+                                         "🔥🔥🔥 [关键] HTTP/HTTPS连接 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (大小=%{public}d字节)",
+                                         g_detailedLogCount, srcIP, srcPort, dstIP, dstPort, serviceLabel, readResult);
                             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
                                          "🔥 [关键] 此连接已被VPN捕获并发送到服务器127.0.0.1:8888");
                         }
+                        
+                        // 🔥 记录所有TCP连接（包括HTTP/HTTPS）
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                     "📊 TCP数据包 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (大小=%{public}d字节)",
+                                     packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel, readResult);
                         
                         NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 TCP %s:%d -> %s:%d%s", 
                                            packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
@@ -160,10 +165,33 @@ void HandleReadTunfd(FdInfo fdInfo)
                                      packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
                     }
                 } else if (protocol == 17) {  // UDP
+                    if (readResult >= 28) {
+                        uint16_t srcPort = (buffer[20] << 8) | buffer[21];
+                        uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                        
+                        // 🔥 详细记录DNS查询（UDP端口53）
+                        if (dstPort == 53) {
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                         "🔍 DNS查询请求: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, 大小=%{public}d字节)",
+                                         srcIP, srcPort, dstIP, dstPort, readResult);
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                         "📤 DNS查询将通过UDP隧道转发到VPN服务器");
+                        } else {
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                         "📦 UDP数据包: %{public}s:%{public}d -> %{public}s:%{public}d (大小=%{public}d字节)",
+                                         srcIP, srcPort, dstIP, dstPort, readResult);
+                        }
+                    }
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 UDP %s -> %s", packetCount, srcIP, dstIP);
                 } else if (protocol == 1) {  // ICMP
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "🏓 ICMP数据包: %{public}s -> %{public}s (大小=%{public}d字节)",
+                                 srcIP, dstIP, readResult);
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 ICMP %s -> %s", packetCount, srcIP, dstIP);
                 } else {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📦 其他协议数据包: 协议=%{public}d %{public}s -> %{public}s (大小=%{public}d字节)",
+                                 protocol, srcIP, dstIP, readResult);
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 protocol=%d %s -> %s", packetCount, protocol, srcIP, dstIP);
                 }
             } else if (version == 6 && readResult >= 40) {  // IPv6
@@ -180,15 +208,30 @@ void HandleReadTunfd(FdInfo fdInfo)
                 
                 if (nextHeader == 6) {  // TCP
                     g_ipv6TcpPackets++;
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📊 IPv6 TCP数据包 #%{public}d: %{public}s -> %{public}s (大小=%{public}d字节)",
+                                 packetCount, srcIP, dstIP, readResult);
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 TCP %s -> %s", packetCount, srcIP, dstIP);
                 } else if (nextHeader == 17) {  // UDP
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📊 IPv6 UDP数据包 #%{public}d: %{public}s -> %{public}s (大小=%{public}d字节)",
+                                 packetCount, srcIP, dstIP, readResult);
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 UDP %s -> %s", packetCount, srcIP, dstIP);
                 } else if (nextHeader == 58) {  // ICMPv6
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📊 IPv6 ICMPv6数据包 #%{public}d: %{public}s -> %{public}s (大小=%{public}d字节)",
+                                 packetCount, srcIP, dstIP, readResult);
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 ICMPv6 %s -> %s", packetCount, srcIP, dstIP);
                 } else {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📊 IPv6其他协议数据包 #%{public}d: 协议=%{public}d %{public}s -> %{public}s (大小=%{public}d字节)",
+                                 packetCount, nextHeader, srcIP, dstIP, readResult);
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 nextHeader=%d %s -> %s", packetCount, nextHeader, srcIP, dstIP);
                 }
             } else {
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "⚠️ 未知IP版本数据包 #%{public}d: IP版本=%{public}d (大小=%{public}d字节)",
+                             packetCount, version, readResult);
                 NETMANAGER_VPN_LOGI("📊 PACKET #%d: Unknown IP version %d", packetCount, version);
             }
         }
@@ -199,19 +242,91 @@ void HandleReadTunfd(FdInfo fdInfo)
             break;
         }
 
+        // 🔥 发送前记录详细信息（IPv4和IPv6）
+        if (readResult >= 20) {
+            uint8_t version = (buffer[0] >> 4) & 0x0F;
+            if (version == 4) {
+                uint8_t protocol = buffer[9];
+                char srcIP[16], dstIP[16];
+                snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
+                snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+                
+                if (protocol == 17 && readResult >= 28) {  // UDP
+                    uint16_t srcPort = (buffer[20] << 8) | buffer[21];
+                    uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                    if (dstPort == 53) {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                     "🚀 转发DNS查询: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, %{public}d字节) -> VPN服务器 %{public}s:%{public}d",
+                                     srcIP, srcPort, dstIP, dstPort, readResult,
+                                     inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                    } else {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                     "🚀 转发UDP请求: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节) -> VPN服务器 %{public}s:%{public}d",
+                                     srcIP, srcPort, dstIP, dstPort, readResult,
+                                     inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                    }
+                } else if (protocol == 6 && readResult >= 40) {  // TCP
+                    uint16_t srcPort = (buffer[20] << 8) | buffer[21];
+                    uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                    const char* serviceType = "";
+                    if (dstPort == 80) serviceType = " [HTTP]";
+                    else if (dstPort == 443) serviceType = " [HTTPS]";
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "🚀 转发TCP请求: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (%{public}d字节) -> VPN服务器 %{public}s:%{public}d",
+                                 srcIP, srcPort, dstIP, dstPort, serviceType, readResult,
+                                 inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                } else if (protocol == 1) {  // ICMP
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "🚀 转发ICMP数据包: %{public}s -> %{public}s (%{public}d字节) -> VPN服务器 %{public}s:%{public}d",
+                                 srcIP, dstIP, readResult,
+                                 inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                } else {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "🚀 转发数据包: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节) -> VPN服务器 %{public}s:%{public}d",
+                                 protocol, srcIP, dstIP, readResult,
+                                 inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                }
+            } else if (version == 6 && readResult >= 40) {  // IPv6
+                uint8_t nextHeader = buffer[6];
+                char srcIP[40], dstIP[40];
+                snprintf(srcIP, sizeof(srcIP), "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                         buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15],
+                         buffer[16], buffer[17], buffer[18], buffer[19], buffer[20], buffer[21], buffer[22], buffer[23]);
+                snprintf(dstIP, sizeof(dstIP), "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                         buffer[24], buffer[25], buffer[26], buffer[27], buffer[28], buffer[29], buffer[30], buffer[31],
+                         buffer[32], buffer[33], buffer[34], buffer[35], buffer[36], buffer[37], buffer[38], buffer[39]);
+                
+                const char* protocolName = "";
+                if (nextHeader == 6) protocolName = "TCP";
+                else if (nextHeader == 17) protocolName = "UDP";
+                else if (nextHeader == 58) protocolName = "ICMPv6";
+                else protocolName = "其他";
+                
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "🚀 转发IPv6数据包: %{public}s -> %{public}s (协议=%{public}s, %{public}d字节) -> VPN服务器 %{public}s:%{public}d",
+                             srcIP, dstIP, protocolName, readResult,
+                             inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+            }
+        }
+        
         int sendResult = sendto(fdInfo.tunnelFd, buffer, readResult, 0,
             reinterpret_cast<struct sockaddr*>(&fdInfo.serverAddr), sizeof(fdInfo.serverAddr));
         if (sendResult <= 0) {
             NETMANAGER_VPN_LOGE("❌ Failed to send packet #%d to server[%{public}s:%{public}d], ret: %{public}d, error: %{public}s",
                                 packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
                                 sendResult, strerror(errno));
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "❌ 转发失败: 数据包 #%{public}d 发送到服务器 %{public}s:%{public}d 失败, ret=%{public}d, error=%{public}s",
+                         packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
+                         sendResult, strerror(errno));
             continue;
         }
 
         g_packetsSent++;
         NETMANAGER_VPN_LOGI("✅ PACKET #%d: Sent %{public}d bytes to server (total sent: %{public}d, responses: %{public}d)", 
                            packetCount, sendResult, g_packetsSent, g_responsesReceived);
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] ✅ 数据包 #%{public}d: 已发送 %{public}d 字节到服务器 (总计发送: %{public}d, 收到响应: %{public}d)",
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                     "✅ 转发成功: 数据包 #%{public}d 已发送 %{public}d 字节到VPN服务器 (总计发送: %{public}d, 收到响应: %{public}d)",
                      packetCount, sendResult, g_packetsSent, g_responsesReceived);
         
         // 每10个数据包输出一次统计信息
@@ -286,20 +401,93 @@ void HandleTcpReceived(FdInfo fdInfo)
 
         responseCount++;
         g_responsesReceived++;
+        
+        // 🔥 详细记录接收到的响应（IPv4和IPv6）
+        if (length >= 20) {
+            uint8_t version = (buffer[0] >> 4) & 0x0F;
+            if (version == 4) {
+                uint8_t protocol = buffer[9];
+                char srcIP[16], dstIP[16];
+                snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
+                snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+                
+                if (protocol == 17 && length >= 28) {  // UDP
+                    uint16_t srcPort = (buffer[20] << 8) | buffer[21];
+                    uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                    if (srcPort == 53) {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                     "📥 收到DNS响应: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, %{public}d字节) <- VPN服务器",
+                                     srcIP, srcPort, dstIP, dstPort, length);
+                    } else {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                     "📥 收到UDP响应: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节) <- VPN服务器",
+                                     srcIP, srcPort, dstIP, dstPort, length);
+                    }
+                } else if (protocol == 6 && length >= 40) {  // TCP
+                    uint16_t srcPort = (buffer[20] << 8) | buffer[21];
+                    uint16_t dstPort = (buffer[22] << 8) | buffer[23];
+                    const char* serviceType = "";
+                    if (srcPort == 80) serviceType = " [HTTP响应]";
+                    else if (srcPort == 443) serviceType = " [HTTPS响应]";
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📥 收到TCP响应: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (%{public}d字节) <- VPN服务器",
+                                 srcIP, srcPort, dstIP, dstPort, serviceType, length);
+                } else if (protocol == 1) {  // ICMP
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📥 收到ICMP响应: %{public}s -> %{public}s (%{public}d字节) <- VPN服务器",
+                                 srcIP, dstIP, length);
+                } else {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                                 "📥 收到响应: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节) <- VPN服务器",
+                                 protocol, srcIP, dstIP, length);
+                }
+            } else if (version == 6 && length >= 40) {  // IPv6
+                uint8_t nextHeader = buffer[6];
+                char srcIP[40], dstIP[40];
+                snprintf(srcIP, sizeof(srcIP), "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                         buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15],
+                         buffer[16], buffer[17], buffer[18], buffer[19], buffer[20], buffer[21], buffer[22], buffer[23]);
+                snprintf(dstIP, sizeof(dstIP), "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                         buffer[24], buffer[25], buffer[26], buffer[27], buffer[28], buffer[29], buffer[30], buffer[31],
+                         buffer[32], buffer[33], buffer[34], buffer[35], buffer[36], buffer[37], buffer[38], buffer[39]);
+                
+                const char* protocolName = "";
+                if (nextHeader == 6) protocolName = "TCP";
+                else if (nextHeader == 17) protocolName = "UDP";
+                else if (nextHeader == 58) protocolName = "ICMPv6";
+                else protocolName = "其他";
+                
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                             "📥 收到IPv6响应: %{public}s -> %{public}s (协议=%{public}s, %{public}d字节) <- VPN服务器",
+                             srcIP, dstIP, protocolName, length);
+            }
+        }
+        
         NETMANAGER_VPN_LOGI("📥 RESPONSE #%d: Received %{public}d bytes from server (total responses: %{public}d)", 
                            responseCount, length, g_responsesReceived);
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                     "📥 响应统计: 响应 #%{public}d 从VPN服务器收到 %{public}d 字节 (总计响应: %{public}d)",
+                     responseCount, length, g_responsesReceived);
 
         // 接收到udp server的数据，写入到虚拟网卡中
         if (fdInfo.tunFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunFd: %{public}d, stopping write loop", fdInfo.tunFd);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "❌ TUN设备无效: tunFd=%{public}d, 无法写入响应", fdInfo.tunFd);
             break;
         }
 
         int ret = write(fdInfo.tunFd, buffer, length);
         if (ret <= 0) {
             NETMANAGER_VPN_LOGE("error Write To Tunfd, errno: %{public}d", errno);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "❌ 写入TUN设备失败: 响应 #%{public}d (%{public}d字节), errno=%{public}d",
+                         responseCount, length, errno);
         } else {
             NETMANAGER_VPN_LOGI("✅ Wrote %{public}d bytes to TUN device", ret);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "✅ 写入TUN成功: 响应 #%{public}d 已写入 %{public}d 字节到TUN设备",
+                         responseCount, ret);
         }
     }
 
