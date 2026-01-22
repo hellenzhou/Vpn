@@ -69,7 +69,7 @@ struct StartVpn {
       this.flag = 'Pass';
     } else {
       showToast('CreateTunnel Fail', BUTTON_SUCCESS_MESSAGE);
-      hilog.error(0x0000, 'testTag', 'developTag', '[ZBQ] CreateTunnel Fail, tunnelFd: %{public}d', tunnelFd);
+      hilog.error(0x0000, 'ZBQ', '[主页] ❌ CreateTunnel Fail, tunnelFd: %{public}d', tunnelFd);
       this.flag = 'Error';
     }
   }
@@ -223,7 +223,7 @@ struct StartVpn {
             } catch (err) {
               showToast('start vpnExt Fail: ' + JSON.stringify(err), BUTTON_SUCCESS_MESSAGE);
               this.flag = 'Error';
-              hilog.error(0x0000, 'testTag', 'developTag', 'start vpnExt Fail %{public}s', JSON.stringify(err) ?? '');
+              hilog.error(0x0000, 'ZBQ', '[主页] ❌ start vpnExt Fail: %{public}s', JSON.stringify(err) ?? '');
             }
             // [EndExclude start_vpn_extension_ability]
           })

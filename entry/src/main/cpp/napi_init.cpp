@@ -127,9 +127,12 @@ void HandleReadTunfd(FdInfo fdInfo)
         packetCount++;
         g_packetsReadFromTun++;  // 统计从TUN读取的数据包
         
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                     "📥 从TUN读取数据包 #%{public}d: 大小=%{public}d字节 (总计读取: %{public}d, 已转发: %{public}d, 已丢弃: %{public}d)",
-                     packetCount, readResult, g_packetsReadFromTun, g_packetsForwarded, g_packetsDropped);
+        // 🔥 精简日志：只在每10个数据包或前5个数据包打印详细信息
+        if (packetCount <= 5 || packetCount % 10 == 0) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "📥 数据包 #%{public}d: %{public}d字节 -> 服务器",
+                         packetCount, readResult);
+        }
         
         // 解析IP版本
         if (readResult >= 1) {
@@ -163,14 +166,12 @@ void HandleReadTunfd(FdInfo fdInfo)
                             isHttpTraffic = true;
                         }
                         
-                        // 🔥 详细记录前20个HTTP/HTTPS连接
-                        if (isHttpTraffic && g_detailedLogCount < 20) {
+                        // 🔥 精简日志：只记录前5个HTTP/HTTPS连接
+                        if (isHttpTraffic && g_detailedLogCount < 5) {
                             g_detailedLogCount++;
                             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                                         "🔥🔥🔥 [关键] HTTP/HTTPS连接 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (大小=%{public}d字节)",
-                                         g_detailedLogCount, srcIP, srcPort, dstIP, dstPort, serviceLabel, readResult);
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                                         "🔥 [关键] 此连接已被VPN捕获并发送到服务器127.0.0.1:8888");
+                                         "🌐 %{public}s: %{public}s:%{public}d -> %{public}s:%{public}d",
+                                         serviceLabel, srcIP, srcPort, dstIP, dstPort);
                         }
                         
                         // 🔥 记录所有TCP连接（包括HTTP/HTTPS）
@@ -372,63 +373,31 @@ void HandleReadTunfd(FdInfo fdInfo)
             NETMANAGER_VPN_LOGE("❌ Failed to send packet #%d to server[%{public}s:%{public}d], ret: %{public}d, error: %{public}s",
                                 packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
                                 sendResult, strerror(errno_save));
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                         "❌ [转发失败] 数据包 #%{public}d 发送到服务器 %{public}s:%{public}d 失败",
-                         packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                         "❌ [转发失败] 错误详情: ret=%{public}d, errno=%{public}d (%{public}s)",
-                         sendResult, errno_save, strerror(errno_save));
-            
-            // 🔥 详细的错误诊断
-            if (errno_save == ECONNREFUSED) {
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                             "❌ [转发失败] 诊断: 连接被拒绝 - 代理服务器可能未运行或未监听端口");
-            } else if (errno_save == ENETUNREACH) {
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                             "❌ [转发失败] 诊断: 网络不可达 - 无法连接到代理服务器");
-            } else if (errno_save == EHOSTUNREACH) {
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                             "❌ [转发失败] 诊断: 主机不可达 - 代理服务器地址可能错误");
-            } else if (errno_save == EAGAIN || errno_save == EWOULDBLOCK) {
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                             "⚠️ [转发失败] 诊断: 资源暂时不可用 - 可能是UDP缓冲区满，稍后重试");
-            } else if (errno_save == EBADF) {
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                             "❌ [转发失败] 诊断: 文件描述符无效 - tunnelFd=%{public}d 可能已关闭",
-                             fdInfo.tunnelFd);
-            } else {
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                             "❌ [转发失败] 诊断: 未知错误 - 请检查网络连接和代理服务器状态");
-            }
-            
             g_packetsSendFailed++;
+            
+            // 🔥 精简日志：转发失败时只打印一条错误信息
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                         "📊 [转发统计] 读取=%{public}d, 转发成功=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
-                         g_packetsReadFromTun, g_packetsForwarded, g_packetsSendFailed, g_packetsDropped);
+                         "❌ 转发失败 #%{public}d: errno=%{public}d (%{public}s)",
+                         packetCount, errno_save, strerror(errno_save));
             continue;
         }
 
         g_packetsSent++;
         g_packetsForwarded++;  // 统计成功转发的数据包
-        NETMANAGER_VPN_LOGI("✅ PACKET #%d: Sent %{public}d bytes to server (total sent: %{public}d, responses: %{public}d)", 
-                           packetCount, sendResult, g_packetsSent, g_responsesReceived);
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                     "✅ 转发成功: 数据包 #%{public}d 已发送 %{public}d 字节到VPN服务器 (总计发送: %{public}d, 收到响应: %{public}d)",
-                     packetCount, sendResult, g_packetsSent, g_responsesReceived);
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
-                     "📊 转发统计: 读取=%{public}d, 转发成功=%{public}d, 转发失败=%{public}d, 丢弃=%{public}d",
-                     g_packetsReadFromTun, g_packetsForwarded, g_packetsSendFailed, g_packetsDropped);
         
-        // 每10个数据包输出一次统计信息
-        if (g_packetsSent % 10 == 0) {
+        // 🔥 精简日志：只在每10个数据包或前5个数据包打印成功信息
+        if (packetCount <= 5 || packetCount % 10 == 0) {
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "✅ 转发成功 #%{public}d: %{public}d字节",
+                         packetCount, sendResult);
+        }
+        
+        // 🔥 精简日志：每50个数据包输出一次统计信息
+        if (g_packetsSent % 50 == 0) {
             g_trafficCheckInterval++;
-            time_t currentTime = time(nullptr);
-            time_t vpnUptime = currentTime - g_vpnStartTime;
-            
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 📊 数据包统计: IPv4总数=%{public}d IPv4 TCP=%{public}d IPv6总数=%{public}d IPv6 TCP=%{public}d 发送=%{public}d 响应=%{public}d",
-                         g_ipv4Packets, g_ipv4TcpPackets, g_ipv6Packets, g_ipv6TcpPackets, g_packetsSent, g_responsesReceived);
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", "[VPN客户端] 🌐 浏览器流量统计: HTTP(端口80)=%{public}d HTTPS(端口443)=%{public}d",
-                         g_httpPackets, g_httpsPackets);
+            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                         "📊 统计: 发送=%{public}d, 成功=%{public}d, 失败=%{public}d",
+                         g_packetsSent, g_packetsForwarded, g_packetsSendFailed);
             
             // 🔥 流量劫持完整性检查
             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
@@ -923,12 +892,40 @@ static napi_value StartVpn(napi_env env, napi_callback_info info)
     }
  
     // 启动两个线程, 一个处理读取虚拟网卡的数据，另一个接收服务端的数据
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                 "[VPN客户端] 🚀 准备启动数据转发线程...");
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                 "[VPN客户端] 📋 线程参数: tunFd=%{public}d, tunnelFd=%{public}d, 服务器=%{public}s:%{public}d",
+                 g_fdInfo.tunFd, g_fdInfo.tunnelFd,
+                 inet_ntoa(g_fdInfo.serverAddr.sin_addr), ntohs(g_fdInfo.serverAddr.sin_port));
+    
+    if (g_fdInfo.tunFd < 0) {
+        OH_LOG_Print(LOG_APP, LOG_ERROR, 0x0000, "ZBQ", 
+                     "[VPN客户端] ❌ 错误: tunFd无效 (%{public}d)，无法启动数据转发线程", g_fdInfo.tunFd);
+        NETMANAGER_VPN_LOGE("Invalid tunFd: %{public}d, cannot start VPN", g_fdInfo.tunFd);
+    }
+    
+    if (g_fdInfo.tunnelFd < 0) {
+        OH_LOG_Print(LOG_APP, LOG_ERROR, 0x0000, "ZBQ", 
+                     "[VPN客户端] ❌ 错误: tunnelFd无效 (%{public}d)，无法启动数据转发线程", g_fdInfo.tunnelFd);
+        NETMANAGER_VPN_LOGE("Invalid tunnelFd: %{public}d, cannot start VPN", g_fdInfo.tunnelFd);
+    }
+    
     g_threadRunF = true;
     std::thread tt1(HandleReadTunfd, g_fdInfo);
     std::thread tt2(HandleTcpReceived, g_fdInfo);
 
     g_threadT1 = std::move(tt1);
     g_threadT2 = std::move(tt2);
+    
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                 "[VPN客户端] ✅ 数据转发线程已启动");
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                 "[VPN客户端] 📝 线程1: 从TUN读取数据包并转发到服务器");
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                 "[VPN客户端] 📝 线程2: 从服务器接收数据包并写入TUN");
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZBQ", 
+                 "[VPN客户端] 🔍 请查看后续日志确认数据包是否被读取和转发");
 
     napi_value retValue;
     napi_create_int32(env, 0, &retValue);

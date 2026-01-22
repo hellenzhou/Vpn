@@ -62,7 +62,7 @@ struct StopVpn {
       this.flag = 'Pass';
       // [EndExclude stop_vpn_extension_ability_on_destroy]
     }).catch((err: Error) => {
-       hilog.error(0x0000, 'testTag', 'developTag', '[ZBQ] vpn Destroy Failed: %{public}s', JSON.stringify(err) ?? '');
+       hilog.error(0x0000, 'ZBQ', '[主页] ❌ vpn Destroy Failed: %{public}s', JSON.stringify(err) ?? '');
       // [StartExclude stop_vpn_extension_ability_on_destroy]
       showToast('vpn Destroy Failed: ' + JSON.stringify(err), TOAST_DURATION);
       this.flag = 'Error';
@@ -114,7 +114,7 @@ struct StopVpn {
               showToast('stop vpnExt Fail: ' + JSON.stringify(err), TOAST_DURATION);
               this.flag = 'Error';
               // [EndExclude stop_vpn_extension_ability]
-              hilog.error(0x0000, 'testTag', 'developTag', 'stop vpnExt Fail %{public}s', JSON.stringify(err) ?? '');
+              hilog.error(0x0000, 'ZBQ', '[主页] ❌ stop vpnExt Fail: %{public}s', JSON.stringify(err) ?? '');
             }
 
           })

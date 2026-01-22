@@ -30,11 +30,13 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // 🔥 类初始化时输出日志（类加载时执行）
   constructor() {
     super();
-    // 🔥 使用多种日志方式确保能看到
+    // 🔥 使用多种日志方式确保能看到（类加载时立即输出）
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 扩展能力类构造函数执行');
-    hilog.info(0x0000, 'testTag', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥 (备用日志)');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥 (备用日志2)');
     console.log('[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
+    console.error('[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥'); // 使用error级别确保能看到
   }
   
   private vpnConnection: vpnExtension.VpnConnection | null = null;
@@ -61,7 +63,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   onCreate(want: Want) {
     // 🔥 最开始的日志，使用多种方式确保能看到
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
-    hilog.info(0x0000, 'testTag', '[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥 (备用日志)');
     console.log('[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onCreate() 被调用 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
@@ -108,8 +110,10 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   }
 
   onRequest(want: Want, startId: number) {
-    // 🔥 最开始的日志，确保能看到onRequest是否被调用
+    // 🔥 最开始的日志，使用多种方式确保能看到
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 onRequest() 开始执行 🔥🔥🔥');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥🔥🔥 onRequest() 开始执行 🔥🔥🔥 (备用日志)');
+    console.log('[扩展能力] 🔥🔥🔥 onRequest() 开始执行 🔥🔥🔥');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ========== onRequest() 被调用 ==========');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] 🔥 测试：onRequest()被调用了！');
     hilog.info(0x0000, 'ZBQ', '[扩展能力] ✅✅✅ 确认：onRequest() 已被系统调用 ✅✅✅');
@@ -172,13 +176,13 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   }
 
   Destroy() {
-    hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'vpn Destroy');
+    hilog.info(0x0000, 'ZBQ', '[扩展能力] vpn Destroy');
     // 关闭VPN
     if (this.vpnConnection) {
       this.vpnConnection.destroy().then(() => {
-        hilog.info(0x0000, 'testTag', 'developTag', '%{public}s', 'vpn Destroy Success');
+        hilog.info(0x0000, 'ZBQ', '[扩展能力] vpn Destroy Success');
       }).catch((err: Error) => {
-        hilog.error(0x0000, 'testTag', 'developTag', 'vpn Destroy Failed: %{public}s', JSON.stringify(err) ?? '');
+        hilog.error(0x0000, 'ZBQ', '[扩展能力] vpn Destroy Failed: %{public}s', JSON.stringify(err) ?? '');
       });
     }
   }

@@ -175,7 +175,7 @@ export default struct allNetworksBtn {
         let notificationOps = new NotificationOperations(context);
         notificationOps.publishNotificationWithWantAgent();
       } catch (err) {
-        hilog.error(0x0000, 'testTag', 'developTag', '[ZBQ] Notification failed: %{public}s', JSON.stringify(err) ?? '');
+        hilog.error(0x0000, 'ZBQ', '[设置VPN] ❌ Notification failed: %{public}s', JSON.stringify(err) ?? '');
       }
       // [EndExclude vpn_config_parameters]
     }, 500);
