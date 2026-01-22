@@ -312,9 +312,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
           new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6
         ];
         this.mtu = 1400;
-        // 🔥🔥🔥 关键修复：指定8.8.8.8作为DNS服务器，强制所有DNS查询使用Google DNS
-        // 这样避免使用不稳定的223.5.5.5，提高DNS解析成功率
-        this.dnsAddresses = ['8.8.8.8'];  // 使用Google DNS，稳定可靠
+        // 🔥🔥🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
+        // 这样所有网络流量（包括DNS）都必须走VPN隧道
+        this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         
         // 🔥🔥🔥 关键：trustedApplications为空表示所有应用流量都通过VPN
         // vpnConnection.protect()已经保护了UDP隧道，不会产生路由循环
@@ -372,9 +372,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 ========== 完整VPN配置（与工作版本一致） ==========');
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 addresses: %{public}s', JSON.stringify(config.addresses));
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 mtu: %{public}d', config.mtu);
-      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 dnsAddresses: %{public}s (空=DNS走VPN)', JSON.stringify(config.dnsAddresses));
-      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 trustedApplications: %{public}s (空=所有应用走VPN)', JSON.stringify(config.trustedApplications));
-      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 blockedApplications: %{public}s (空=不阻止任何应用)', JSON.stringify(config.blockedApplications));
+      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 dnsAddresses: %{public}s', JSON.stringify(config.dnsAddresses));
+      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 trustedApplications: %{public}s (这些应用绕过VPN，直接访问物理网络)', JSON.stringify(config.trustedApplications));
+      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 blockedApplications: %{public}s (空=所有其他应用走VPN)', JSON.stringify(config.blockedApplications));
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 routes数量: %{public}d (仅IPv4+IPv6默认路由)', config.routes.length);
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 route[0]: IPv4默认路由 0.0.0.0/0 → vpn-tun (网关: 192.168.100.1)');
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 route[1]: IPv6默认路由 ::/0 → vpn-tun (网关: ::1)');
@@ -384,10 +384,15 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       // 🔥 流量劫持配置验证
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 ========== 流量劫持配置验证 ==========');
       if (config.trustedApplications.length === 0) {
-        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ trustedApplications为空 - 所有应用流量都将通过VPN');
+        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ trustedApplications为空 - 代理服务器未配置绕过VPN！');
+        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告：这会导致路由循环，代理转发将失败！');
       } else {
-        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ trustedApplications不为空: %{public}s - 这些应用将绕过VPN', JSON.stringify(config.trustedApplications));
-        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告：trustedApplications中的应用流量不会被劫持到TUN！');
+        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ trustedApplications: %{public}s - 这些应用将绕过VPN（正确配置）', JSON.stringify(config.trustedApplications));
+        if (config.trustedApplications.includes('com.hellen.vpnserver')) {
+          hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ 代理服务器已配置绕过VPN，避免路由循环');
+        } else {
+          hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 代理服务器未在trustedApplications中，可能导致路由循环！');
+        }
       }
       
       if (config.blockedApplications.length === 0) {
@@ -431,6 +436,22 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告: gTunnelFd无效 (%{public}d)，数据转发可能失败', gTunnelFd);
           }
           hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🚀 启动数据转发线程: vpn_client.startVpn(%{public}d, %{public}d)...', gTunFd, gTunnelFd);
+          hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [流量劫持检查] VPN启动时间: %{public}d, 开始监控流量劫持情况', Date.now());
+          
+          // 🔥 添加流量劫持验证定时器
+          let trafficCheckCount = 0;
+          const trafficCheckInterval = setInterval(() => {
+            trafficCheckCount++;
+            hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [流量劫持检查] 第%{public}d次检查 - 启动后%{public}d秒', 
+                      trafficCheckCount, trafficCheckCount * 5);
+            
+            // 检查是否有数据包被处理（通过全局变量或其他方式）
+            // 这里只是日志记录，用于验证VPN是否真正工作
+            if (trafficCheckCount >= 12) {  // 检查1分钟
+              clearInterval(trafficCheckInterval);
+              hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [流量劫持检查] 监控结束');
+            }
+          }, 5000);
           vpn_client.startVpn(gTunFd, gTunnelFd);
           hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅✅✅ VPN数据转发线程已启动 ✅✅✅');
           hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== VPN完整启动流程完成 ==========');

@@ -97,10 +97,12 @@ export default struct allNetworksBtn {
         // 这样避免使用不稳定的223.5.5.5，提高DNS解析成功率
         this.dnsAddresses = ['8.8.8.8'];  // 使用Google DNS，稳定可靠
         
-        // 🔥 重要：VPN Proxy Server必须被阻止使用VPN，避免路由循环
-        // VPN Proxy Server必须直接访问物理网络来转发流量，不能走VPN隧道
-        this.trustedApplications = [];  // 没有应用被特殊信任使用VPN
-        this.blockedApplications = ['com.hellen.vpnserver'];  // VPN代理服务器必须被阻止使用VPN
+        // 🔥🔥🔥 关键修复：代理服务器必须绕过VPN，避免路由循环
+        // trustedApplications = 不走VPN（绕过VPN，直接访问物理网络）
+        // blockedApplications = 走VPN（通过VPN隧道）
+        // 代理服务器必须直接访问物理网络来转发流量，不能走VPN隧道
+        this.trustedApplications = ['com.hellen.vpnserver'];  // 代理服务器绕过VPN
+        this.blockedApplications = [];  // 空数组 = 所有其他应用都走VPN
         
         // 🔥 全流量VPN路由配置
         this.routes = [
