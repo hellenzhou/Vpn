@@ -30,11 +30,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // 🔥 类初始化时输出日志（类加载时执行）
   constructor() {
     super();
-    // 🔥 使用多种日志方式确保能看到（类加载时立即输出）
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥 扩展能力类构造函数执行');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥 (备用日志)');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥 (备用日志2)');
+
     console.log('[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥');
     console.error('[扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载 🔥🔥🔥'); // 使用error级别确保能看到
   }
@@ -50,20 +46,18 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // - Gateway必须是192.168.100.1（VPN网关）
   // - ⚠️ 不要改成10.8段或其他物理网络段
   private tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP（和工作版本一致）
-  private blockedAppName: string = 'com.example.testvpn';
+  private blockedAppName: string = 'com.hellen.vpnserver';
 
   // 🔥 新增：测试方法，确保扩展能力能够被调用
   testExtensionAbility() {
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== testExtensionAbility() 被调用 ==========');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥 测试：扩展能力进程已启动！');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 这是一个测试方法，用于验证扩展能力是否正常工作');
+
     return "ExtensionAbility is working!";
   }
 
   onCreate(want: Want) {
     // 🔥 最开始的日志，使用多种方式确保能看到
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥 (备用日志)');
+
     console.log('[扩展能力] 🔥🔥🔥 onCreate() 开始执行 🔥🔥🔥');
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== onCreate() 被调用 ==========');
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
@@ -132,20 +126,19 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
 
   // 🔥 新增：自动初始化VPN的方法
   initializeVpn() {
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== initializeVpn() 开始执行 ==========');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 检查VpnConnection有效性...');
+
     
     if (!this.vpnConnection) {
       hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ VpnConnection is null，无法继续初始化');
       return;
     }
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ VpnConnection有效，准备创建UDP隧道');
+
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
 
     try {
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📞 调用 vpnExtension.createVpnConnection()...');
       this.vpnConnection = vpnExtension.createVpnConnection(this.context);
-      hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ createVpnConnection() 成功，VpnConnection对象已创建');
+
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 VpnConnection类型: %{public}s', typeof this.vpnConnection);
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 准备调用 CreateTunnel() 创建UDP隧道...');
       this.CreateTunnel();
@@ -158,14 +151,14 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   }
 
   onConnect(want: Want) {
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== onConnect() 被调用 ==========');
+
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] - abilityName: %{public}s', want.abilityName);
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
     return null;
   }
 
   onDisconnect(want: Want) {
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== onDisconnect() 被调用 ==========');
+   
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] - abilityName: %{public}s', want.abilityName);
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] - bundleName: %{public}s', want.bundleName ?? '');
   }
@@ -190,11 +183,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // 创建隧道的方法
   CreateTunnel() {
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥🔥🔥 CreateTunnel() 开始执行 🔥🔥🔥');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== 步骤1/3: 创建UDP隧道 ==========');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 当前配置:');
+
     hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - VPN服务器IP: %{public}s', this.vpnServerIp);
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - VPN服务器端口: 8888');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 检查全局变量状态...');
+
     hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - gTunnelFd: %{public}d', gTunnelFd);
     hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - gTunFd: %{public}d', gTunFd);
     
@@ -205,7 +196,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       return;
     }
     
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📞 准备调用 vpn_client.udpConnect()...');
+
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 参数检查 - vpn_client存在: %{public}s', typeof vpn_client !== 'undefined' ? '是' : '否');
     
     try {
@@ -229,14 +220,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     } catch (error) {
       hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ udpConnect() 异常: %{public}s', JSON.stringify(error));
       hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ 错误详情: %{public}s', error?.message ?? '');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力]   3) 网络不可达 - 请确认IP地址正确(127.0.0.1用于本地，10.20.23.147用于远程)');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力]   4) socket创建失败 - 请检查原生代码日志中的socket()错误信息');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力]   5) IP地址格式错误 - 请确认IP地址格式正确(例如: 127.0.0.1)');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力] 📝 排查建议:');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力]   - 查看原生代码日志(napi_init.cpp)中的详细错误信息');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力]   - 确认VPN服务器应用已启动并显示"RUNNING"状态');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力]   - 检查VPN服务器日志中是否有"Starting VPN Server"和"Socket bound successfully"消息');
-      hilog.error(0x0000, 'ZHOUB', '[扩展能力]   - 如果使用远程IP，请确认网络连接正常');
+
       return;
     }
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🚀 准备调用 Protect() 保护UDP隧道...');
@@ -249,8 +233,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // 保护隧道的方法
   Protect() {
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔥🔥🔥 Protect() 开始执行 🔥🔥🔥');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== 步骤2/3: 保护UDP隧道 ==========');
-    hilog.info(0x0000, 'ZHOUB', '[扩展能力] step2: 准备保护UDP隧道');
+
     hilog.info(0x0000, 'ZHOUB', '[扩展能力] 当前 gTunnelFd = %{public}d', gTunnelFd);
     if (gTunnelFd < 0) {
       hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ gTunnelFd无效 (%{public}d)，无法保护隧道', gTunnelFd);
@@ -319,7 +302,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // 🎯 正确配置：使用blockedApplications让代理服务器绕过VPN
         // 根据官方文档：blockedApplications中的应用不会被VPN代理，其他应用走VPN
         this.trustedApplications = [];  // 空数组 - 不使用白名单
-        this.blockedApplications = ['ellen.vpnserver'];  // 代理服务器不走VPN，其他都走VPN
+        this.blockedApplications = [blockedAppName];  // 使用传入的参数配置代理服务器绕过VPN
         
         // 🔍 关键测试：虽然代理服务器绕过VPN，但浏览器流量应该仍然走VPN
         // 如果浏览器能访问，说明有流量绕过了VPN劫持！
@@ -328,12 +311,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [系统检查] VPN配置验证开始');
         hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [系统检查] trustedApplications机制测试');
         
-        // 🎯🎯🎯 关键配置：blockedApplications包含代理服务器包名
-        // 代理服务器将绕过VPN，其他所有应用都走VPN
-        this.blockedApplications = ['ellen.vpnserver'];  // 包含代理服务器包名
-        
-        // 🔥 全流量VPN路由配置 - 按照工作版本
-        // ⚠️ 不需要127.0.0.0/8排除路由，vpnConnection.protect()已处理UDP隧道保护
+
         this.routes = [
           // IPv4 默认路由 - 捕获所有IPv4流量
           {
@@ -377,7 +355,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [TUN IP检查] 使用手动指定IP: %{public}s（与工作版本一致）', this.tunIp);
       
       // 🔥 输出详细的VPN配置信息
-      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 ========== 完整VPN配置（与工作版本一致） ==========');
+
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 addresses: %{public}s', JSON.stringify(config.addresses));
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 mtu: %{public}d', config.mtu);
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 dnsAddresses: %{public}s', JSON.stringify(config.dnsAddresses));
@@ -392,12 +370,10 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 route[%{public}d]: %{public}s路由 %{public}s/%{public}d → vpn-tun', i, routeType, dest, prefix);
       }
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 ⚠️ UDP隧道已通过vpnConnection.protect()保护，不会路由循环');
-      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 ====================================');
-      
-      // 🔥 流量劫持配置验证
+
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 ========== 流量劫持配置验证 ==========');
       if (config.trustedApplications.length === 0) {
-        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ trustedApplications为空 - 代理服务器未配置绕过VPN！');
+
         hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告：这会导致路由循环，代理转发将失败！');
       } else {
         hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ trustedApplications: %{public}s - 这些应用将绕过VPN（正确配置）', JSON.stringify(config.trustedApplications));
@@ -412,7 +388,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ blockedApplications为空 - 不阻止任何应用使用VPN');
       } else {
         hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 blockedApplications: %{public}s - 这些应用被阻止使用VPN', JSON.stringify(config.blockedApplications));
-        hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 注意：blockedApplications中的应用流量不会被劫持到TUN');
+
       }
       
       if (config.routes.length >= 2) {
@@ -474,20 +450,14 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             }
           }, 5000);
           vpn_client.startVpn(gTunFd, gTunnelFd);
-          hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅✅✅ VPN数据转发线程已启动 ✅✅✅');
-          hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== VPN完整启动流程完成 ==========');
-          hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🎉 一键启动成功：创建隧道✅ → 保护隧道✅ → 开启VPN✅');
-          hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 VPN状态：');
+
           hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - TUN设备: FD=%{public}d (已创建)', gTunFd);
           hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - UDP隧道: FD=%{public}d (已创建并保护)', gTunnelFd);
-          hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - 数据转发: 已启动 (TUN ↔ UDP隧道)');
-          hilog.info(0x0000, 'ZHOUB', '[扩展能力]   - 流量劫持: 已激活 (所有流量进入TUN)');
+
         })
         // [EndExclude vpn_control_case_extention_ability]
         .catch((err: BusinessError) => {
-          hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ VPN连接创建失败');
-          hilog.error(0x0000, 'ZHOUB', '[扩展能力] 错误代码: %{public}d', err.code ?? -1);
-          hilog.error(0x0000, 'ZHOUB', '[扩展能力] 错误消息: %{public}s', err.message ?? '');
+
           hilog.error(0x0000, 'ZHOUB', '[扩展能力] 错误详情: %{public}s', JSON.stringify(err) ?? '');
         });
     } else {
