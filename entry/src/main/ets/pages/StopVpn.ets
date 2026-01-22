@@ -51,18 +51,18 @@ struct StopVpn {
   private vpnConnection: vpnExtension.VpnConnection = vpnExtension.createVpnConnection(this.context);
 
   Destroy() {
-    hilog.info(0x0000, 'testTag', 'developTag', '[ZBQ] vpn Destroy, tunnelFd: %{public}d', gTunnelFd);
+    hilog.info(0x0000, 'testTag', 'developTag', '[ZHOUB] vpn Destroy, tunnelFd: %{public}d', gTunnelFd);
     // [StartExclude stop_vpn_extension_ability_on_destroy]
     vpn_client.stopVpn(gTunnelFd);
     // [EndExclude stop_vpn_extension_ability_on_destroy]
     this.vpnConnection.destroy().then(() => {
-      hilog.info(0x0000, 'testTag', 'developTag', '[ZBQ] vpn Destroy Success');
+      hilog.info(0x0000, 'testTag', 'developTag', '[ZHOUB] vpn Destroy Success');
       // [StartExclude stop_vpn_extension_ability_on_destroy]
       showToast('vpn Destroy Success', TOAST_DURATION);
       this.flag = 'Pass';
       // [EndExclude stop_vpn_extension_ability_on_destroy]
     }).catch((err: Error) => {
-       hilog.error(0x0000, 'ZBQ', '[主页] ❌ vpn Destroy Failed: %{public}s', JSON.stringify(err) ?? '');
+       hilog.error(0x0000, 'ZHOUB', '[主页] ❌ vpn Destroy Failed: %{public}s', JSON.stringify(err) ?? '');
       // [StartExclude stop_vpn_extension_ability_on_destroy]
       showToast('vpn Destroy Failed: ' + JSON.stringify(err), TOAST_DURATION);
       this.flag = 'Error';
@@ -114,7 +114,7 @@ struct StopVpn {
               showToast('stop vpnExt Fail: ' + JSON.stringify(err), TOAST_DURATION);
               this.flag = 'Error';
               // [EndExclude stop_vpn_extension_ability]
-              hilog.error(0x0000, 'ZBQ', '[主页] ❌ stop vpnExt Fail: %{public}s', JSON.stringify(err) ?? '');
+              hilog.error(0x0000, 'ZHOUB', '[主页] ❌ stop vpnExt Fail: %{public}s', JSON.stringify(err) ?? '');
             }
 
           })

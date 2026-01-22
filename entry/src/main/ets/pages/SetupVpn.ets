@@ -142,13 +142,13 @@ export default struct allNetworksBtn {
     let vpnConfig = new Config(tunIp, blockedAppName);
 
     // 🔍 诊断日志：输出VPN配置详情
-    hilog.info(0x0000, 'testTag', '[ZBQ] 🔥🔥🔥 全流量VPN配置 🔥🔥🔥');
-    hilog.info(0x0000, 'testTag', '[ZBQ] ✅ DNS配置: %{public}s (空=DNS走VPN)', JSON.stringify(vpnConfig.dnsAddresses));
-    hilog.info(0x0000, 'testTag', '[ZBQ] ✅ 信任应用: %{public}s (这些应用绕过VPN)', JSON.stringify(vpnConfig.trustedApplications));
-    hilog.info(0x0000, 'testTag', '[ZBQ] ✅ 阻止应用: %{public}s (空=所有应用走VPN)', JSON.stringify(vpnConfig.blockedApplications));
-    hilog.info(0x0000, 'testTag', '[ZBQ] ✅ 路由数量: %{public}d 条 (IPv4+IPv6默认路由)', vpnConfig.routes.length);
-    hilog.info(0x0000, 'testTag', '[ZBQ] ✅ IPv4默认路由: 0.0.0.0/0 → vpn-tun');
-    hilog.info(0x0000, 'testTag', '[ZBQ] ✅ IPv6默认路由: ::/0 → vpn-tun');
+    hilog.info(0x0000, 'testTag', '[ZHOUB] 🔥🔥🔥 全流量VPN配置 🔥🔥🔥');
+    hilog.info(0x0000, 'testTag', '[ZHOUB] ✅ DNS配置: %{public}s (空=DNS走VPN)', JSON.stringify(vpnConfig.dnsAddresses));
+    hilog.info(0x0000, 'testTag', '[ZHOUB] ✅ 信任应用: %{public}s (这些应用绕过VPN)', JSON.stringify(vpnConfig.trustedApplications));
+    hilog.info(0x0000, 'testTag', '[ZHOUB] ✅ 阻止应用: %{public}s (空=所有应用走VPN)', JSON.stringify(vpnConfig.blockedApplications));
+    hilog.info(0x0000, 'testTag', '[ZHOUB] ✅ 路由数量: %{public}d 条 (IPv4+IPv6默认路由)', vpnConfig.routes.length);
+    hilog.info(0x0000, 'testTag', '[ZHOUB] ✅ IPv4默认路由: 0.0.0.0/0 → vpn-tun');
+    hilog.info(0x0000, 'testTag', '[ZHOUB] ✅ IPv6默认路由: ::/0 → vpn-tun');
 
     // [Start vpn_config_parameters]
     // Note: VPN connections must be created in VpnExtensionAbility context
@@ -158,16 +158,16 @@ export default struct allNetworksBtn {
     
     // Simulated VPN setup - actual implementation requires VpnExtensionContext
     // For demonstration purposes, we'll show the configuration is ready
-    hilog.info(0x0000, 'testTag', '[ZBQ] VPN config prepared. In production, this should be called from VPN Extension Ability');
+    hilog.info(0x0000, 'testTag', '[ZHOUB] VPN config prepared. In production, this should be called from VPN Extension Ability');
     
     // Simulate successful setup for UI testing
     setTimeout(() => {
-      hilog.info(0x0000, 'testTag', '[ZBQ] VPN configuration validated');
+      hilog.info(0x0000, 'testTag', '[ZHOUB] VPN configuration validated');
       // [StartExclude vpn_config_parameters]
       // Note: Actual VPN setup happens in VPNExtentionAbility.ets
       // This is just a UI component to demonstrate configuration
       showToast('VPN config prepared. Use VPN Extension Ability for actual setup', 4000);
-      hilog.info(0x0000, 'testTag', 'developTag', '[ZBQ] VPN config setup demonstrated');
+      hilog.info(0x0000, 'testTag', 'developTag', '[ZHOUB] VPN config setup demonstrated');
       this.flag = 'Pass';  // 设置状态为成功
 
       // Publish notification
@@ -175,7 +175,7 @@ export default struct allNetworksBtn {
         let notificationOps = new NotificationOperations(context);
         notificationOps.publishNotificationWithWantAgent();
       } catch (err) {
-        hilog.error(0x0000, 'ZBQ', '[设置VPN] ❌ Notification failed: %{public}s', JSON.stringify(err) ?? '');
+        hilog.error(0x0000, 'ZHOUB', '[设置VPN] ❌ Notification failed: %{public}s', JSON.stringify(err) ?? '');
       }
       // [EndExclude vpn_config_parameters]
     }, 500);

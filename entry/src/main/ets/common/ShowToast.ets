@@ -23,6 +23,6 @@ export function showToast(msg: string, dur: number) {
       duration: dur
     });
   } catch (err) {
-    hilog.error(0x0000, 'ZBQ', '[ShowToast] ❌ Failed to show toast: %{public}s', JSON.stringify(err) ?? '');
+    hilog.error(0x0000, 'ZHOUB', '[ShowToast] ❌ Failed to show toast: %{public}s', JSON.stringify(err) ?? '');
   }
 }

@@ -243,7 +243,7 @@ this.blockedApplications = [
 在 DevEco Studio 中：
 
 1. 打开 **Hilog** 控制台
-2. 过滤标签：`ZBQ`
+2. 过滤标签：`ZHOUB`
 3. 设置日志级别：`Info`
 4. **清空日志**
 5. **打开浏览器访问网站**

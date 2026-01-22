@@ -83,17 +83,6 @@
           ],
           "when": "inuse"
         }
-      },
-      {
-        "name": "ohos.permission.MANAGE_VPN",
-        "reason": "$string:grant_manage_vpn",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility",
-            "MyVpnExtAbility"
-          ],
-          "when": "inuse"
-        }
       }
     ]
   }
