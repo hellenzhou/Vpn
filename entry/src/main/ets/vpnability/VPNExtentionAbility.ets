@@ -55,6 +55,30 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     return "ExtensionAbility is working!";
   }
 
+  // 🔥 新增：保护转发socket的方法 - 解决VPN服务器转发socket路由循环问题
+  protectForwardingSocket(sockFd: number): boolean {
+    hilog.info(0x0000, 'ZHOUB', '[扩展能力] ========== protectForwardingSocket() 被调用 ==========');
+    hilog.info(0x0000, 'ZHOUB', '[扩展能力] 保护转发socket: fd=%{public}d', sockFd);
+
+    if (!this.vpnConnection) {
+      hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ VpnConnection不存在，无法保护socket');
+      return false;
+    }
+
+    try {
+      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 调用 vpnConnection.protect(%{public}d) 保护转发socket...', sockFd);
+      this.vpnConnection.protect(sockFd).then(() => {
+        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ 转发socket保护成功: fd=%{public}d', sockFd);
+      }).catch((err: Error) => {
+        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ 转发socket保护失败: %{public}s', JSON.stringify(err));
+      });
+      return true;
+    } catch (error) {
+      hilog.error(0x0000, 'ZHOUB', '[扩展能力] ❌ protectForwardingSocket异常: %{public}s', JSON.stringify(error));
+      return false;
+    }
+  }
+
   onCreate(want: Want) {
     // 🔥 最开始的日志，使用多种方式确保能看到
 
