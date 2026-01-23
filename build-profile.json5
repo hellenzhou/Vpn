@@ -47,13 +47,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPNControl_Case_zK_V0HUG8pJp-25p9jl7yRfkmbeFyifdPxt_WE-puDY=.cer",
+          "certpath": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VpnClient_hXyxRZu8aHT87M0rPFlgvNWi6Ki_P1uxWJx8ZivbpxY=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B50FBDBDA45514E164CE8D9A26D6993D1F69F28542D5DF01E0B294AF5C899BEFC1BB9AB0A9A10AA",
-          "profile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPNControl_Case_zK_V0HUG8pJp-25p9jl7yRfkmbeFyifdPxt_WE-puDY=.p7b",
+          "keyPassword": "0000001B36C642CA5ADB415C21BACEAC47D8CA511F3A84E30B5BB1FACD45314942C173671E0B7F639E629A",
+          "profile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VpnClient_hXyxRZu8aHT87M0rPFlgvNWi6Ki_P1uxWJx8ZivbpxY=.p7b",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VPNControl_Case_zK_V0HUG8pJp-25p9jl7yRfkmbeFyifdPxt_WE-puDY=.p12",
-          "storePassword": "0000001B6D96E264947568BF8D66965D10DF20569B82188262CCDB96EACB3C3AE2D1E2DEA659373C57CB7F"
+          "storeFile": "C:\\Users\\LeagSoft\\.ohos\\config\\default_VpnClient_hXyxRZu8aHT87M0rPFlgvNWi6Ki_P1uxWJx8ZivbpxY=.p12",
+          "storePassword": "0000001BA6687D3E6C733AA978F4B62E30D0059F8B5D708E04E2A6AAF633E025F995597BCCD2C89715BF79"
         }
       }
     ]
