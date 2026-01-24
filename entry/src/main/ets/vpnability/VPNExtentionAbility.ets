@@ -46,7 +46,8 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   // - Gateway必须是192.168.100.1（VPN网关）
   // - ⚠️ 不要改成10.8段或其他物理网络段
   private tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP（和工作版本一致）
-  private blockedAppName: string = 'ellen.vpnserver';
+  // ⚠️ 必须填写“真实 bundleName”，否则绕过不生效，服务端转发 socket 也会被 VPN 接管导致回环/无响应
+  private blockedAppName: string = 'com.hellen.vpnserver';
 
   // 🔥 新增：测试方法，确保扩展能力能够被调用
   testExtensionAbility() {
