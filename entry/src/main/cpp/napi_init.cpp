@@ -736,10 +736,18 @@ void HandleReadTunfd(FdInfo fdInfo)
         if (g_packetsSent.load() > 10 && g_responsesReceived.load() == 0) {
             time_t now = time(nullptr);
             if (g_lastResponseTime == 0 || (now - g_lastResponseTime) > 5) {
-                NETMANAGER_VPN_LOGE("⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！", g_packetsSent.load());
-                NETMANAGER_VPN_LOGE("⚠️ 可能原因：VPN服务器(127.0.0.1:8888)未运行或未响应");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", "[VPN客户端] ⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！", g_packetsSent.load());
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", "[VPN客户端] ⚠️ 可能原因：VPN服务器(127.0.0.1:8888)未运行或未响应");
+                const char* serverIp = inet_ntoa(fdInfo.serverAddr.sin_addr);
+                uint16_t serverPort = ntohs(fdInfo.serverAddr.sin_port);
+                NETMANAGER_VPN_LOGE("⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！",
+                                   g_packetsSent.load());
+                NETMANAGER_VPN_LOGE("⚠️ 可能原因：VPN服务器(%{public}s:%{public}u)未运行或未响应",
+                                   serverIp, static_cast<unsigned>(serverPort));
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                             "[VPN客户端] ⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！",
+                             g_packetsSent.load());
+                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                             "[VPN客户端] ⚠️ 可能原因：VPN服务器(%{public}s:%{public}u)未运行或未响应",
+                             serverIp, static_cast<unsigned>(serverPort));
                 g_lastResponseTime = now;
             }
         }
