@@ -78,6 +78,7 @@ static std::atomic<int> g_packetsDropped{0};  // 被丢弃的数据包总数（�
 static std::atomic<int> g_packetsSendFailed{0};  // 发送失败的数据包数
 static std::atomic<time_t> g_vpnStartTime{0};  // VPN启动时间
 static std::atomic<int> g_trafficCheckInterval{0};  // 流量检查间隔计数器
+static std::atomic<int> g_tcpOutLogCount{0};  // TCP出站日志计数（限量）
 
 
 static constexpr const int MAX_STRING_LENGTH = 1024;
@@ -240,6 +241,27 @@ void HandleReadTunfd(FdInfo fdInfo)
                         // ✅ 修复：正确处理网络字节序
                         uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
                         uint16_t dstPort = ntohs(*(uint16_t*)&buffer[22]);
+
+                        // 🔍 关键诊断：记录TUN出站TCP flags/seq/ack（限量）
+                        uint8_t ipHeaderLen = (buffer[0] & 0x0F) * 4;
+                        if (readResult >= ipHeaderLen + 20) {
+                            uint8_t flags = buffer[ipHeaderLen + 13];
+                            uint32_t seq = (static_cast<uint32_t>(buffer[ipHeaderLen + 4]) << 24) |
+                                           (static_cast<uint32_t>(buffer[ipHeaderLen + 5]) << 16) |
+                                           (static_cast<uint32_t>(buffer[ipHeaderLen + 6]) << 8) |
+                                           (static_cast<uint32_t>(buffer[ipHeaderLen + 7]));
+                            uint32_t ack = (static_cast<uint32_t>(buffer[ipHeaderLen + 8]) << 24) |
+                                           (static_cast<uint32_t>(buffer[ipHeaderLen + 9]) << 16) |
+                                           (static_cast<uint32_t>(buffer[ipHeaderLen + 10]) << 8) |
+                                           (static_cast<uint32_t>(buffer[ipHeaderLen + 11]));
+                            int logIndex = g_tcpOutLogCount.fetch_add(1);
+                            bool isWeb = (dstPort == 80 || dstPort == 443);
+                            if ((isWeb && logIndex < 50) || (!isWeb && logIndex < 10)) {
+                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                             "TCP_TUN_OUT flags=0x%{public}02x seq=%{public}u ack=%{public}u %{public}s:%{public}d -> %{public}s:%{public}d (size=%{public}d)",
+                                             flags, seq, ack, srcIP, srcPort, dstIP, dstPort, readResult);
+                            }
+                        }
                         
                         // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
                         VPN_CLIENT_LOGI("[TUN->Proxy] src=%{public}s:%{public}d dst=%{public}s:%{public}d proto=TCP size=%{public}d",
