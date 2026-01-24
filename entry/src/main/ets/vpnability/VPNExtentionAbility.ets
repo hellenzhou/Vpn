@@ -503,12 +503,12 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     setInterval(() => {
       try {
         // 调用native接口获取下一个待保护的socket
-        let sockFd = vpn_client.getNextSocketToProtect();
+        const sockFd: number = vpn_client.getNextSocketToProtect();
         if (sockFd >= 0) {
           hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 发现待保护socket: fd=%{public}d', sockFd);
 
           // 调用protectForwardingSocket保护该socket
-          let success = this.protectForwardingSocket(sockFd);
+          const success: boolean = this.protectForwardingSocket(sockFd);
           if (success) {
             hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ socket保护请求已发送: fd=%{public}d', sockFd);
           } else {
