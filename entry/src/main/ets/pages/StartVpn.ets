@@ -48,9 +48,9 @@ struct StartVpn {
   @State message: string = 'VPN';
   // [StartExclude start_vpn_extension_ability]
   // VPN 服务器配置：
-  // - 本地测试：127.0.0.1（VPN服务器运行在设备本身）
+  // - 本地设备真实IP：10.18.15.169（确保跨应用可达）
   // - 部署机器IP：可改为实际服务器IP，例如 10.20.23.147
-  @State vpnServerIp: string = '127.0.0.1'; // VPN服务器IP（本地回环地址）
+  @State vpnServerIp: string = '10.18.15.169'; // VPN服务器IP（按设备实际IP调整）
   // ⚠️ 重要：TUN IP是VPN虚拟网络的IP（192.168.100.x段），与物理网络无关
   @State tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP
   @State prefix: string = '24';
@@ -106,7 +106,7 @@ struct StartVpn {
             .width('40%')
             .textAlign(TextAlign.Center)
             .backgroundColor(0xAFEEEE);
-          TextInput({ text: '127.0.0.1' })
+          TextInput({ text: '10.18.15.169' })
             .onChange((value) => {
               this.vpnServerIp = value;
             })

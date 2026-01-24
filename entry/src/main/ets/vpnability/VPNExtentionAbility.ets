@@ -38,9 +38,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
   private vpnConnection: vpnExtension.VpnConnection | null = null;
   // ⚠️ 重要：VPN服务器IP配置
   // - 部署机器IP：10.20.23.147
-  // - 本地测试：127.0.0.1
+  // - 本地设备真实IP：10.18.15.169
   // - ⚠️ 不要使用10.8段（局域网冲突）
-  private vpnServerIp: string = '127.0.0.1'; // VPN服务器IP（可改为10.20.23.147）
+  private vpnServerIp: string = '10.18.15.169'; // VPN服务器IP（按设备实际IP调整）
   // ⚠️ 重要：TUN IP是VPN虚拟网络的IP，与物理网络无关
   // - 使用192.168.100.x段（VPN虚拟网络）
   // - Gateway必须是192.168.100.1（VPN网关）
