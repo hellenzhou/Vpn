@@ -94,6 +94,89 @@ std::string GetStringFromValueUtf8(napi_env env, napi_value value)
     return result;
 }
 
+// 前置声明：C++ 在函数定义前使用时必须先声明
+void ProtectForwardingSocketNative(int sockFd);
+
+// 🎯 处理控制消息
+void HandleControlMessage(const uint8_t* buffer, int length)
+{
+    VPN_CLIENT_LOGI("🎯 处理控制消息: 长度=%{public}d字节", length);
+
+    // 控制消息格式：IP头(20字节) + UDP头(8字节) + Payload
+    if (length < 28) {
+        VPN_CLIENT_LOGE("❌ 控制消息太短: %{public}d字节 (最小28字节)", length);
+        return;
+    }
+
+    // 提取payload：跳过IP头(20字节)和UDP头(8字节)
+    const uint8_t* payload = buffer + 20 + 8;
+    int payloadLength = length - 20 - 8;
+
+    if (payloadLength < 1) {
+        VPN_CLIENT_LOGE("❌ 控制消息payload为空");
+        return;
+    }
+
+    // 解析控制命令
+    uint8_t commandType = payload[0];
+    VPN_CLIENT_LOGI("🔍 控制命令类型: 0x%{public}x", commandType);
+
+    switch (commandType) {
+        case 0x01: {  // 保护转发socket (PROTECT_FORWARDING_SOCKET)
+            if (payloadLength < 5) {  // 1字节命令 + 4字节socket FD
+                VPN_CLIENT_LOGE("❌ 保护socket命令参数不足: %{public}d字节 (需要5字节)", payloadLength);
+                return;
+            }
+
+            // 解析socket FD (大端字节序)
+            int32_t sockFd = (payload[1] << 24) | (payload[2] << 16) | (payload[3] << 8) | payload[4];
+            VPN_CLIENT_LOGI("🛡️ 收到保护转发socket请求: fd=%{public}d", sockFd);
+
+            // 调用ETS层的保护方法
+            ProtectForwardingSocketNative(sockFd);
+            break;
+        }
+
+        default:
+            VPN_CLIENT_LOGE("❌ 未知控制命令类型: 0x%{public}x", commandType);
+            break;
+    }
+}
+
+// 🎯 全局变量：待保护的socket队列
+#include <queue>
+#include <mutex>
+std::queue<int> g_socketsToProtect;
+std::mutex g_socketProtectMutex;
+
+// 🎯 添加socket到保护队列
+void QueueSocketForProtection(int sockFd)
+{
+    std::lock_guard<std::mutex> lock(g_socketProtectMutex);
+    g_socketsToProtect.push(sockFd);
+    VPN_CLIENT_LOGI("📋 已将socket添加到保护队列: fd=%{public}d (队列大小=%{public}zu)",
+                   sockFd, g_socketsToProtect.size());
+}
+
+// 🎯 获取下一个待保护的socket (供ETS层调用)
+int GetNextSocketToProtect()
+{
+    std::lock_guard<std::mutex> lock(g_socketProtectMutex);
+    if (g_socketsToProtect.empty()) {
+        return -1;
+    }
+    int sockFd = g_socketsToProtect.front();
+    g_socketsToProtect.pop();
+    return sockFd;
+}
+
+// 🎯 调用ETS层的socket保护方法
+void ProtectForwardingSocketNative(int sockFd)
+{
+    VPN_CLIENT_LOGI("🔄 将socket加入保护队列: fd=%{public}d", sockFd);
+    QueueSocketForProtection(sockFd);
+}
+
 void HandleReadTunfd(FdInfo fdInfo)
 {
     NETMANAGER_VPN_LOGI("=== TUN READ THREAD STARTED ===");
@@ -194,25 +277,36 @@ void HandleReadTunfd(FdInfo fdInfo)
                                      "[VPN客户端] 📊 数据包 #%{public}d: IPv4 TCP %{public}s:%{public}d -> %{public}s:%{public}d%{public}s",
                                      packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
                     }
-                } else if (protocol == 17) {  // UDP
+                } else                 if (protocol == 17) {  // UDP
                     if (readResult >= 28) {
                         // ✅ 修复：正确处理网络字节序
                         uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
                         uint16_t dstPort = ntohs(*(uint16_t*)&buffer[22]);
-                        
+
+                        // 🔥🔥🔥 控制消息识别：目的IP=127.0.0.1 且 目的端口=0
+                        if (strcmp(dstIP, "127.0.0.1") == 0 && dstPort == 0) {
+                            // 🎯 这是控制消息！不转发到服务器，而是本地处理
+                            VPN_CLIENT_LOGI("🎯 检测到控制消息: src=%{public}s:%{public}d dst=%{public}s:%{public}d size=%{public}d",
+                                         srcIP, srcPort, dstIP, dstPort, readResult);
+
+                            // 处理控制消息
+                            HandleControlMessage(buffer, readResult);
+                            continue;  // 跳过转发，控制消息不发送到服务器
+                        }
+
                         // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
                         VPN_CLIENT_LOGI("[TUN->Proxy] src=%{public}s:%{public}d dst=%{public}s:%{public}d proto=UDP size=%{public}d",
                                      srcIP, srcPort, dstIP, dstPort, readResult);
-                        
+
                         // 🔥 详细记录DNS查询（UDP端口53）
                         if (dstPort == 53) {
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
                                          "🔍 DNS查询请求: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, 大小=%{public}d字节)",
                                          srcIP, srcPort, dstIP, dstPort, readResult);
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
                                          "📤 DNS查询将通过UDP隧道转发到VPN服务器");
                         } else {
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
                                          "📦 UDP数据包: %{public}s:%{public}d -> %{public}s:%{public}d (大小=%{public}d字节)",
                                          srcIP, srcPort, dstIP, dstPort, readResult);
                         }
@@ -1037,6 +1131,24 @@ static napi_value ProtectForwardingSocket(napi_env env, napi_callback_info info)
     napi_create_int32(env, 0, &retValue);
     return retValue;
 }
+
+// 🔥 新增：获取下一个待保护socket的native接口
+static napi_value GetNextSocketToProtect(napi_env env, napi_callback_info info)
+{
+    NETMANAGER_VPN_LOGI("========== GetNextSocketToProtect() 开始执行 ==========");
+
+    int sockFd = GetNextSocketToProtect();
+
+    if (sockFd >= 0) {
+        NETMANAGER_VPN_LOGI("✅ 返回待保护socket: fd=%{public}d", sockFd);
+    } else {
+        NETMANAGER_VPN_LOGI("📭 没有待保护的socket");
+    }
+
+    napi_value retValue;
+    napi_create_int32(env, sockFd, &retValue);
+    return retValue;
+}
  
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
@@ -1046,6 +1158,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"startVpn", nullptr, StartVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopVpn", nullptr, StopVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"protectForwardingSocket", nullptr, ProtectForwardingSocket, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"getNextSocketToProtect", nullptr, GetNextSocketToProtect, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;
