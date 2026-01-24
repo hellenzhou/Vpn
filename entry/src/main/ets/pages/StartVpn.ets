@@ -54,7 +54,7 @@ struct StartVpn {
   // ⚠️ 重要：TUN IP是VPN虚拟网络的IP（192.168.100.x段），与物理网络无关
   @State tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP
   @State prefix: string = '24';
-  @State blockedAppName: string = 'com.example.baidumyapplication'; // 示例
+  @State blockedAppName: string = 'com.hellen.vpnserver'; // 示例
   @State flag: string = 'wait';
 
   // Note: This is a regular page with UIAbilityContext, not VpnExtensionContext

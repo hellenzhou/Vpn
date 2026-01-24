@@ -32,7 +32,7 @@ const buttonMargin = 16;
 // - 使用192.168.100.x段（VPN虚拟网络）
 // - Gateway必须是192.168.100.1（VPN网关）
 let tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP
-let blockedAppName: string = 'com.example.baidumyapplication'; // 示例
+let blockedAppName: string = 'com.hellen.vpnserver'; // 示例
 
 @Component
 export default struct allNetworksBtn {
