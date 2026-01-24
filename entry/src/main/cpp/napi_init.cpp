@@ -796,6 +796,13 @@ void HandleTcpReceived(FdInfo fdInfo)
                     protocolName = "UDP";
                     srcPort = (buffer[20] << 8) | buffer[21];
                     dstPort = (buffer[22] << 8) | buffer[23];
+                    // 🎯 控制消息识别：服务器->客户端的控制包 (dst=127.0.0.1:0)
+                    if (strcmp(dstIP, "127.0.0.1") == 0 && dstPort == 0) {
+                        VPN_CLIENT_LOGI("🎯 收到控制消息(来自服务器): src=%{public}s:%{public}d dst=%{public}s:%{public}d size=%{public}d",
+                                      srcIP, srcPort, dstIP, dstPort, length);
+                        HandleControlMessage(buffer, static_cast<int>(length));
+                        continue;  // 控制消息不写入TUN
+                    }
                     if (srcPort == 53) {
                         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                                      "📥 收到DNS响应: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, %{public}d字节) <- VPN服务器",
