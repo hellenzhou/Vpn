@@ -824,6 +824,23 @@ void HandleTcpReceived(FdInfo fdInfo)
                     protocolName = "TCP";
                     srcPort = (buffer[20] << 8) | buffer[21];
                     dstPort = (buffer[22] << 8) | buffer[23];
+
+                    // 🔍 关键诊断：记录TCP标志位/seq/ack，判断握手/数据是否正常
+                    uint8_t ipHeaderLen = (buffer[0] & 0x0F) * 4;
+                    if (length >= ipHeaderLen + 20) {
+                        uint8_t flags = buffer[ipHeaderLen + 13];
+                        uint32_t seq = (static_cast<uint32_t>(buffer[ipHeaderLen + 4]) << 24) |
+                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 5]) << 16) |
+                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 6]) << 8) |
+                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 7]));
+                        uint32_t ack = (static_cast<uint32_t>(buffer[ipHeaderLen + 8]) << 24) |
+                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 9]) << 16) |
+                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 10]) << 8) |
+                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 11]));
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "📥 TCP响应标志: flags=0x%{public}02x seq=%{public}u ack=%{public}u %{public}s:%{public}d -> %{public}s:%{public}d",
+                                     flags, seq, ack, srcIP, srcPort, dstIP, dstPort);
+                    }
                     const char* serviceType = "";
                     if (srcPort == 80) serviceType = " [HTTP响应]";
                     else if (srcPort == 443) serviceType = " [HTTPS响应]";
