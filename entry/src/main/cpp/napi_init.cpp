@@ -221,6 +221,10 @@ void HandleReadTunfd(FdInfo fdInfo)
     uint8_t buffer[BUFFER_SIZE] = {0};
     int packetCount = 0;
     time_t lastHeartbeat = time(nullptr);
+    
+    // 🔥 关键诊断：跟踪连续失败次数，检测VPN路由表是否被禁用
+    static int consecutiveFailures = 0;
+    static time_t firstFailureTime = 0;
 
     while (g_threadRunF) {
         // 检查文件描述符有效性
@@ -244,11 +248,9 @@ void HandleReadTunfd(FdInfo fdInfo)
                           totalPackets, tcpPackets, packetsSent, responsesReceived);
             
             if (totalPackets == 0 && vpnUptime > 10) {
-                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 警告：VPN启动%{public}lld秒，但TUN设备未收到任何数据包！", (long long)vpnUptime);
-                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 结论：VPN路由表可能未生效，浏览器流量走物理网络（绕过VPN）");
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️ VPN启动%{public}lld秒，但TUN设备未收到任何数据包 - VPN路由表可能未生效", (long long)vpnUptime);
             } else if (totalPackets > 0 && packetsSent > 0 && responsesReceived == 0) {
-                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 警告：已发送%{public}d个数据包，但未收到任何响应！", packetsSent);
-                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 结论：代理服务器可能未运行，但浏览器仍能访问 = HarmonyOS可能已fallback到物理网络");
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️ 已发送%{public}d个数据包，但未收到任何响应 - 代理服务器可能未运行", packetsSent);
             }
         }
 
@@ -278,16 +280,25 @@ void HandleReadTunfd(FdInfo fdInfo)
                                  "[VPN客户端] 🔍 [VPN状态检测-空闲检查] 之前检测到TCP流量(%{public}d个包)，但TUN设备已空闲%{public}lld秒",
                                  tcpPackets, (long long)(now - lastTunRead));
                     OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                 "[VPN客户端] 🔍 [VPN状态检测-空闲检查] 已发送%{public}d个包，收到%{public}d个响应",
-                                 packetsSent, responsesReceived);
+                                 "[VPN客户端] 🔍 [VPN状态检测-空闲检查] 已发送%{public}d个包，收到%{public}d个响应，失败%{public}d个",
+                                 packetsSent, responsesReceived, g_packetsSendFailed.load());
                     if (packetsSent > 10 && responsesReceived == 0) {
                         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
                                      "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 结论：VPN路由表可能仍然生效，但代理服务器未响应");
                         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
                                      "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 如果浏览器仍能访问网站 = HarmonyOS可能已fallback到物理网络");
+                        
+                        // 🔥 关键检测：如果TUN设备长时间空闲且发送失败，可能HarmonyOS已禁用VPN路由表
+                        if ((now - lastTunRead) > 30 && g_packetsSendFailed.load() > 20) {
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                         "[VPN客户端] 🚨 [VPN状态检测] TUN设备已空闲%{public}lld秒，发送失败%{public}d次 - HarmonyOS可能已禁用VPN路由表",
+                                         (long long)(now - lastTunRead), g_packetsSendFailed.load());
+                        }
                     } else if (packetsSent == 0 && (now - lastTunRead) > 30) {
                         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
                                      "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 结论：VPN路由表可能已被HarmonyOS禁用，流量已fallback到物理网络");
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 建议：重启VPN客户端以重新激活VPN路由表");
                     }
                 }
                 
@@ -442,17 +453,13 @@ void HandleReadTunfd(FdInfo fdInfo)
                         VPN_CLIENT_LOGI("[TUN->Proxy] src=%{public}s:%{public}d dst=%{public}s:%{public}d proto=UDP size=%{public}d",
                                      srcIP, srcPort, dstIP, dstPort, readResult);
 
-                        // 🔥 详细记录DNS查询（UDP端口53）
-                        if (dstPort == 53) {
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                         "🔍 DNS查询请求: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, 大小=%{public}d字节)",
-                                         srcIP, srcPort, dstIP, dstPort, readResult);
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                         "📤 DNS查询将通过UDP隧道转发到VPN服务器");
-                        } else {
-                            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                         "📦 UDP数据包: %{public}s:%{public}d -> %{public}s:%{public}d (大小=%{public}d字节)",
-                                         srcIP, srcPort, dstIP, dstPort, readResult);
+                        // 🔥 简化：DNS查询日志在转发时统一记录，这里只记录非DNS的UDP
+                        if (dstPort != 53) {
+                            if (packetCount <= 5 || packetCount % 20 == 0) {  // 减少日志频率
+                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                             "📦 UDP数据包 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节)",
+                                             packetCount, srcIP, srcPort, dstIP, dstPort, readResult);
+                            }
                         }
                     }
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 UDP %s -> %s", packetCount, srcIP, dstIP);
@@ -562,14 +569,17 @@ void HandleReadTunfd(FdInfo fdInfo)
                     // ✅ 修复：正确处理网络字节序
                     uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
                     uint16_t dstPort = ntohs(*(uint16_t*)&buffer[22]);
+                    // 🔥 简化：DNS查询只在每10个或前5个时记录，其他UDP减少频率
                     if (dstPort == 53) {
-                        VPN_CLIENT_LOGI("🚀 转发DNS查询: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, %{public}d字节) -> VPN服务器 %{public}s:%{public}d",
-                                     srcIP, srcPort, dstIP, dstPort, readResult,
-                                     inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                        if (packetCount <= 5 || packetCount % 10 == 0) {
+                            VPN_CLIENT_LOGI("🚀 转发DNS查询 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节)",
+                                         packetCount, srcIP, srcPort, dstIP, dstPort, readResult);
+                        }
                     } else {
-                        VPN_CLIENT_LOGI("🚀 转发UDP请求: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节) -> VPN服务器 %{public}s:%{public}d",
-                                     srcIP, srcPort, dstIP, dstPort, readResult,
-                                     inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                        if (packetCount <= 5 || packetCount % 20 == 0) {
+                            VPN_CLIENT_LOGI("🚀 转发UDP #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节)",
+                                         packetCount, srcIP, srcPort, dstIP, dstPort, readResult);
+                        }
                     }
                 } else if (protocol == 6 && readResult >= 40) {  // TCP
                     // ✅ 修复：正确处理网络字节序
@@ -617,39 +627,69 @@ void HandleReadTunfd(FdInfo fdInfo)
                              "🚀 转发IPv6数据包: %{public}s -> %{public}s (协议=%{public}s, %{public}d字节) -> VPN服务器 %{public}s:%{public}d",
                              srcIP, dstIP, protocolName, readResult,
                              inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
-            } else {
-                // 数据包太小（< 20字节），无法解析，但仍会转发
+            }
+        }
+        
+        // 🔥 简化：异常数据包统一处理（< 20字节或版本未知）
+        if (readResult < 20) {
+            // 数据包太小，无法解析，但仍会转发
+            if (packetCount <= 3) {  // 只在前3个异常包时记录
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "🚀 转发异常数据包: 大小=%{public}d字节 (< 20字节，无法解析) -> VPN服务器 %{public}s:%{public}d",
+                             "🚀 转发异常数据包: 大小=%{public}d字节 (< 20字节) -> VPN服务器 %{public}s:%{public}d",
                              readResult, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
             }
-        } else {
-            // readResult < 20，数据包太小，但仍会转发
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                         "🚀 转发异常数据包: 大小=%{public}d字节 (< 20字节) -> VPN服务器 %{public}s:%{public}d",
-                         readResult, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
         }
         
         int sendResult = sendto(fdInfo.tunnelFd, buffer, readResult, 0,
             reinterpret_cast<struct sockaddr*>(&fdInfo.serverAddr), sizeof(fdInfo.serverAddr));
         if (sendResult <= 0) {
             int errno_save = errno;
-            NETMANAGER_VPN_LOGE("❌ Failed to send packet #%d to server[%{public}s:%{public}d], ret: %{public}d, error: %{public}s",
-                                packetCount, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
-                                sendResult, strerror(errno_save));
             g_packetsSendFailed.fetch_add(1);
             
-            // 🔥 精简日志：转发失败时只打印一条错误信息
-            VPN_CLIENT_LOGE("❌ 转发失败 #%{public}d: errno=%{public}d (%{public}s)",
-                         packetCount, errno_save, strerror(errno_save));
+            // 🔥 关键诊断：记录连续失败次数，检测VPN路由表是否被禁用
+            time_t now = time(nullptr);
+            
+            if (firstFailureTime == 0) {
+                firstFailureTime = now;
+            }
+            consecutiveFailures++;
             
             // 🔍 关键诊断：如果发送失败，可能是代理服务器不存在
             if (errno_save == ECONNREFUSED || errno_save == EHOSTUNREACH || errno_save == ENETUNREACH) {
-                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 警告：无法连接到代理服务器 %{public}s:%{public}d", 
-                              inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
-                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 结论：代理服务器可能未运行，但浏览器仍能访问 = HarmonyOS可能已fallback到物理网络");
+                // 🔥 简化：只在关键节点记录日志（第1次、第10次、第30次、每30次）
+                if (consecutiveFailures == 1 || consecutiveFailures == 10 || 
+                    (consecutiveFailures >= 30 && consecutiveFailures % 30 == 0)) {
+                    VPN_CLIENT_LOGE("[VPN客户端] ❌ 转发失败: 无法连接到代理服务器 %{public}s:%{public}d, 连续失败%{public}d次, 持续%{public}lld秒",
+                                  inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port),
+                                  consecutiveFailures, (long long)(now - firstFailureTime));
+                    
+                    // 🔥 关键检测：如果连续失败超过30次且持续超过10秒，可能HarmonyOS已禁用VPN路由表
+                    if (consecutiveFailures >= 30 && (now - firstFailureTime) >= 10) {
+                        VPN_CLIENT_LOGE("[VPN客户端] 🚨 严重警告: HarmonyOS可能已禁用VPN路由表（连续失败%{public}d次，持续%{public}lld秒）",
+                                      consecutiveFailures, (long long)(now - firstFailureTime));
+                        VPN_CLIENT_LOGE("[VPN客户端] 🚨 如果浏览器仍能访问 = HarmonyOS已fallback到物理网络");
+                    }
+                }
+            } else {
+                // 其他错误类型，只在第1次和第10次记录
+                if (consecutiveFailures == 1 || consecutiveFailures == 10) {
+                    VPN_CLIENT_LOGE("[VPN客户端] ❌ 转发失败 #%{public}d: errno=%{public}d (%{public}s), 连续失败%{public}d次",
+                                 packetCount, errno_save, strerror(errno_save), consecutiveFailures);
+                }
             }
+            
+            // 🔥 关键：数据包被丢弃，应用收不到响应
+            // 如果HarmonyOS检测到VPN无响应，可能会自动禁用VPN路由表，允许流量fallback到物理网络
             continue;
+        }
+        
+        // 🔥 重置连续失败计数（发送成功）
+        if (consecutiveFailures > 0) {
+            if (consecutiveFailures >= 10) {  // 只在失败次数较多时记录恢复日志
+                VPN_CLIENT_LOGI("[VPN客户端] ✅ 转发成功，重置连续失败计数（之前失败%{public}d次）", consecutiveFailures);
+            }
+            consecutiveFailures = 0;
+            firstFailureTime = 0;
         }
 
         g_packetsSent.fetch_add(1);
@@ -676,19 +716,7 @@ void HandleReadTunfd(FdInfo fdInfo)
             // 检查1: 是否有TCP流量（浏览器等应用）
             if (g_ipv4TcpPackets.load() == 0 && g_ipv6TcpPackets.load() == 0) {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "⚠️⚠️⚠️ [流量劫持检查] 警告：没有检测到TCP数据包！");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "⚠️ [流量劫持检查] 可能原因：");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "   1. VPN路由表未生效 - 流量未进入TUN设备");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "   2. 应用流量绕过VPN - 可能使用了trustedApplications");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "   3. 系统路由表配置错误 - 默认路由未指向vpn-tun");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "   4. VPN连接未正确建立 - vpnConnection.create()可能失败");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "🔍 [流量劫持检查] 建议：检查VPN扩展能力日志，确认vpnConnection.create()是否成功");
+                             "⚠️ [流量劫持检查] 没有检测到TCP数据包 - VPN路由表可能未生效或流量绕过VPN");
             } else {
                 VPN_CLIENT_LOGI("✅ [流量劫持检查] 检测到TCP流量：IPv4 TCP=%{public}d, IPv6 TCP=%{public}d",
                              g_ipv4TcpPackets.load(), g_ipv6TcpPackets.load());
@@ -700,13 +728,7 @@ void HandleReadTunfd(FdInfo fdInfo)
             int totalUdpPackets = g_ipv4Packets - g_ipv4TcpPackets + (g_ipv6Packets - g_ipv6TcpPackets);
             if (totalUdpPackets == 0 && g_ipv4TcpPackets.load() == 0 && g_ipv6TcpPackets.load() == 0) {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "⚠️⚠️⚠️ [流量劫持检查] 严重警告：完全没有检测到任何流量！");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "⚠️ [流量劫持检查] 这意味着：");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "   - 所有应用流量都绕过了VPN");
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "   - 或者VPN路由表完全未生效");
+                             "⚠️ [流量劫持检查] 完全没有检测到任何流量 - 所有应用流量可能都绕过了VPN或VPN路由表未生效");
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                              "   - 或者TUN设备未正确创建");
             } else {
@@ -812,13 +834,8 @@ void HandleReadTunfd(FdInfo fdInfo)
             if (g_packetsReadFromTun.load() != totalProcessed) {
                 int missing = g_packetsReadFromTun.load() - totalProcessed;
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "⚠️⚠️⚠️ [转发验证] 警告：有%{public}d个数据包未被处理！",
-                             missing);
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "⚠️ [转发验证] 读取=%{public}d, 已处理=%{public}d (成功=%{public}d + 失败=%{public}d)",
-                             g_packetsReadFromTun.load(), totalProcessed, g_packetsForwarded.load(), g_packetsSendFailed.load());
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "⚠️ [转发验证] 这些数据包可能被遗漏，未转发到代理服务器");
+                             "⚠️ [转发验证] 有%{public}d个数据包未被处理 (读取=%{public}d, 已处理=%{public}d)",
+                             missing, g_packetsReadFromTun.load(), totalProcessed);
             } else {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                              "✅ [转发验证] 完整性验证通过：所有读取的数据包都已尝试转发");
@@ -853,11 +870,9 @@ void HandleReadTunfd(FdInfo fdInfo)
             // 注意：totalProcessed已在上面定义，这里直接使用
             if (g_packetsReadFromTun.load() != totalProcessed) {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "[VPN客户端] ⚠️⚠️⚠️ 警告：转发不完整！读取=%{public}d, 已处理=%{public}d (成功=%{public}d + 失败=%{public}d), 差异=%{public}d",
-                             g_packetsReadFromTun.load(), totalProcessed, g_packetsForwarded.load(), g_packetsSendFailed.load(), 
-                             g_packetsReadFromTun - totalProcessed);
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "[VPN客户端] ⚠️ 可能有数据包在读取后、发送前被丢弃或遗漏！");
+                             "[VPN客户端] ⚠️ 转发不完整: 读取=%{public}d, 已处理=%{public}d, 差异=%{public}d",
+                             g_packetsReadFromTun.load(), totalProcessed, 
+                             g_packetsReadFromTun.load() - totalProcessed);
             } else {
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                              "[VPN客户端] ✅ 转发完整性验证通过：所有从TUN读取的数据包都已处理（成功转发或发送失败）");
@@ -883,42 +898,26 @@ void HandleReadTunfd(FdInfo fdInfo)
             }
         }
         
-        // 警告：如果发送了很多数据包但没有收到响应
+        // 🔥 关键检测：UDP sendto()即使目标不存在也会返回成功，需要检测"发送成功但无响应"
         if (g_packetsSent.load() > 10 && g_responsesReceived.load() == 0) {
             time_t now = time(nullptr);
             if (g_lastResponseTime == 0 || (now - g_lastResponseTime) > 5) {
-                const char* serverIp = inet_ntoa(fdInfo.serverAddr.sin_addr);
-                uint16_t serverPort = ntohs(fdInfo.serverAddr.sin_port);
-                NETMANAGER_VPN_LOGE("⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！",
-                                   g_packetsSent.load());
-                NETMANAGER_VPN_LOGE("⚠️ 可能原因：VPN服务器(%{public}s:%{public}u)未运行或未响应",
-                                   serverIp, static_cast<unsigned>(serverPort));
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                             "[VPN客户端] ⚠️ ⚠️ ⚠️ 警告：已发送 %{public}d 个数据包，但未收到任何响应！",
-                             g_packetsSent.load());
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                             "[VPN客户端] ⚠️ 可能原因：VPN服务器(%{public}s:%{public}u)未运行或未响应",
-                             serverIp, static_cast<unsigned>(serverPort));
-                
-                // 🔥 关键检测：检查VPN路由表是否仍然生效
-                // 如果VPN路由表失效，HarmonyOS系统可能已自动fallback到物理网络
-                int tcpPackets = g_ipv4TcpPackets.load() + g_ipv6TcpPackets.load();
-                if (tcpPackets > 0) {
-                    // 之前有TCP流量，但现在没有响应
-                    // 说明VPN路由表可能仍然生效，但代理服务器未响应
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                 "[VPN客户端] 🔍 [VPN状态检测] 之前检测到TCP流量(%{public}d个包)，VPN路由表可能仍然生效");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                 "[VPN客户端] 🔍 [VPN状态检测] 如果浏览器仍能访问网站 = HarmonyOS系统可能已自动fallback到物理网络");
-                } else {
-                    // 没有TCP流量，说明VPN路由表可能已失效
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                 "[VPN客户端] 🔍 [VPN状态检测] 没有检测到TCP流量，VPN路由表可能已失效");
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                 "[VPN客户端] 🔍 [VPN状态检测] HarmonyOS系统可能检测到VPN无响应，已自动禁用VPN路由表");
-                }
-                
                 g_lastResponseTime = now;
+                
+                // 🔥 简化：只在关键节点记录（第11次、第30次、每30次）
+                if (g_packetsSent.load() == 11 || g_packetsSent.load() == 30 || 
+                    (g_packetsSent.load() > 30 && g_packetsSent.load() % 30 == 0)) {
+                    const char* serverIp = inet_ntoa(fdInfo.serverAddr.sin_addr);
+                    uint16_t serverPort = ntohs(fdInfo.serverAddr.sin_port);
+                    VPN_CLIENT_LOGE("[VPN客户端] ⚠️ 已发送%{public}d个数据包，但未收到任何响应 - 代理服务器(%{public}s:%{public}u)可能未运行",
+                                   g_packetsSent.load(), serverIp, static_cast<unsigned>(serverPort));
+                    
+                    // 🔥 关键检测：如果发送很多包但无响应，可能HarmonyOS已禁用VPN路由表
+                    int tcpPackets = g_ipv4TcpPackets.load() + g_ipv6TcpPackets.load();
+                    if (tcpPackets > 0 && g_packetsSent.load() >= 30) {
+                        VPN_CLIENT_LOGE("[VPN客户端] 🔍 检测到TCP流量但无响应 - 如果浏览器仍能访问 = HarmonyOS可能已fallback到物理网络");
+                    }
+                }
             }
         }
     }
