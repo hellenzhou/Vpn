@@ -18,6 +18,7 @@
  
 #include <cstring>
 #include <thread>
+#include <chrono>
 #include <js_native_api.h>
 #include <js_native_api_types.h>
 #include <unistd.h>
@@ -79,6 +80,8 @@ static std::atomic<int> g_packetsSendFailed{0};  // 发送失败的数据包数
 static std::atomic<time_t> g_vpnStartTime{0};  // VPN启动时间
 static std::atomic<int> g_trafficCheckInterval{0};  // 流量检查间隔计数器
 static std::atomic<int> g_tcpOutLogCount{0};  // TCP出站日志计数（限量）
+static std::atomic<time_t> g_lastTunReadTime{0};  // 最后一次从TUN读取数据包的时间
+static std::atomic<time_t> g_lastStateCheckTime{0};  // 最后一次状态检查的时间
 
 
 static constexpr const int MAX_STRING_LENGTH = 1024;
@@ -210,11 +213,58 @@ void HandleReadTunfd(FdInfo fdInfo)
                 VPN_CLIENT_LOGE("❌ TUN读取失败: errno=%{public}d, 数据包被丢弃", errno);
                 g_packetsDropped.fetch_add(1);
             }
+            
+            // 🔥 关键检测：即使没有数据包，也要定期检查VPN状态
+            // 如果TUN设备长时间没有数据，可能说明VPN路由表已被禁用
+            time_t now = time(nullptr);
+            time_t lastCheck = g_lastStateCheckTime.load();
+            if (lastCheck == 0 || (now - lastCheck) >= 10) {  // 每10秒检查一次
+                g_lastStateCheckTime = now;
+                
+                time_t lastTunRead = g_lastTunReadTime.load();
+                int tcpPackets = g_ipv4TcpPackets.load() + g_ipv6TcpPackets.load();
+                int packetsSent = g_packetsSent.load();
+                int responsesReceived = g_responsesReceived.load();
+                
+                // 情况1: 之前有TCP流量，但现在TUN设备长时间没有数据
+                if (tcpPackets > 0 && lastTunRead > 0 && (now - lastTunRead) > 15) {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测-空闲检查] 之前检测到TCP流量(%{public}d个包)，但TUN设备已空闲%{public}lld秒",
+                                 tcpPackets, (long long)(now - lastTunRead));
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测-空闲检查] 已发送%{public}d个包，收到%{public}d个响应",
+                                 packetsSent, responsesReceived);
+                    if (packetsSent > 10 && responsesReceived == 0) {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 结论：VPN路由表可能仍然生效，但代理服务器未响应");
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 如果浏览器仍能访问网站 = HarmonyOS可能已fallback到物理网络");
+                    } else if (packetsSent == 0 && (now - lastTunRead) > 30) {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 结论：VPN路由表可能已被HarmonyOS禁用，流量已fallback到物理网络");
+                    }
+                }
+                
+                // 情况2: 从未检测到TCP流量，且TUN设备长时间没有数据
+                if (tcpPackets == 0 && lastTunRead == 0 && (now - g_vpnStartTime.load()) > 30) {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ VPN启动%{public}lld秒，但从未检测到TCP流量",
+                                 (long long)(now - g_vpnStartTime.load()));
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 结论：VPN路由表可能从未生效，或已被HarmonyOS禁用");
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测-空闲检查] ⚠️ 如果浏览器能访问网站 = 流量走物理网络（VPN未生效）");
+                }
+            }
+            
+            // 短暂休眠，避免CPU占用过高
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
         packetCount++;
         g_packetsReadFromTun.fetch_add(1);  // 统计从TUN读取的数据包
+        g_lastTunReadTime = time(nullptr);  // 更新最后读取时间
         
         // 🔥 精简日志：只在每10个数据包或前5个数据包打印详细信息
         if (packetCount <= 5 || packetCount % 10 == 0) {
@@ -770,6 +820,25 @@ void HandleReadTunfd(FdInfo fdInfo)
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
                              "[VPN客户端] ⚠️ 可能原因：VPN服务器(%{public}s:%{public}u)未运行或未响应",
                              serverIp, static_cast<unsigned>(serverPort));
+                
+                // 🔥 关键检测：检查VPN路由表是否仍然生效
+                // 如果VPN路由表失效，HarmonyOS系统可能已自动fallback到物理网络
+                int tcpPackets = g_ipv4TcpPackets.load() + g_ipv6TcpPackets.load();
+                if (tcpPackets > 0) {
+                    // 之前有TCP流量，但现在没有响应
+                    // 说明VPN路由表可能仍然生效，但代理服务器未响应
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测] 之前检测到TCP流量(%{public}d个包)，VPN路由表可能仍然生效");
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测] 如果浏览器仍能访问网站 = HarmonyOS系统可能已自动fallback到物理网络");
+                } else {
+                    // 没有TCP流量，说明VPN路由表可能已失效
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测] 没有检测到TCP流量，VPN路由表可能已失效");
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                 "[VPN客户端] 🔍 [VPN状态检测] HarmonyOS系统可能检测到VPN无响应，已自动禁用VPN路由表");
+                }
+                
                 g_lastResponseTime = now;
             }
         }
