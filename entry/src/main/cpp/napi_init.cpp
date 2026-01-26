@@ -247,10 +247,9 @@ void HandleReadTunfd(FdInfo fdInfo)
             VPN_CLIENT_LOGI("[VPN客户端] 💓 统计: TUN读取%{public}d包, TCP包%{public}d, 已发送%{public}d, 已收到响应%{public}d", 
                           totalPackets, tcpPackets, packetsSent, responsesReceived);
             
+            // 🔥 简化：只在心跳中检查TUN设备是否收到数据包，无响应检测在主循环中统一处理
             if (totalPackets == 0 && vpnUptime > 10) {
                 VPN_CLIENT_LOGE("[VPN客户端] ⚠️ VPN启动%{public}lld秒，但TUN设备未收到任何数据包 - VPN路由表可能未生效", (long long)vpnUptime);
-            } else if (totalPackets > 0 && packetsSent > 0 && responsesReceived == 0) {
-                VPN_CLIENT_LOGE("[VPN客户端] ⚠️ 已发送%{public}d个数据包，但未收到任何响应 - 代理服务器可能未运行", packetsSent);
             }
         }
 
@@ -379,20 +378,13 @@ void HandleReadTunfd(FdInfo fdInfo)
                             int tcpPayloadSize = readResult - ipHeaderLen - tcpHeaderLen;
                             if (tcpPayloadSize < 0) tcpPayloadSize = 0;
                             
+                            // 🔥 简化：TCP详细日志只在每50个或前5个时记录
                             int logIndex = g_tcpOutLogCount.fetch_add(1);
                             bool isWeb = (dstPort == 80 || dstPort == 443);
-                            if ((isWeb && logIndex < 50) || (!isWeb && logIndex < 10)) {
+                            if ((isWeb && (logIndex < 5 || logIndex % 50 == 0)) || (!isWeb && logIndex < 5)) {
                                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                             "🔍🔍🔍 [VPN客户端-发送TCP] %{public}s:%{public}d -> %{public}s:%{public}d",
-                                             srcIP, srcPort, dstIP, dstPort);
-                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                             "  ├─ 标志: [%{public}s] (0x%{public}02x)", flagsStr, flags);
-                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                             "  ├─ seq=%{public}u ack=%{public}u", seq, ack);
-                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                             "  ├─ payload: %{public}d字节 (总长度: %{public}d字节)", tcpPayloadSize, readResult);
-                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                             "  └─ 即将转发到代理服务器(127.0.0.1:8888)");
+                                             "🔍 TCP #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d [%{public}s] seq=%{public}u payload=%{public}d",
+                                             packetCount, srcIP, srcPort, dstIP, dstPort, flagsStr, seq, tcpPayloadSize);
                             }
                         }
                         
@@ -445,7 +437,7 @@ void HandleReadTunfd(FdInfo fdInfo)
                             }
                         }
                     }
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 UDP %s -> %s", packetCount, srcIP, dstIP);
+                    // 🔥 简化：移除冗余的PACKET日志（转发时已有日志）
                 } else if (protocol == 1) {  // ICMP
                     // 🔥 简化：ICMP日志只在每10个或前5个时记录
                     if (packetCount <= 5 || packetCount % 10 == 0) {
@@ -453,7 +445,7 @@ void HandleReadTunfd(FdInfo fdInfo)
                                      "🏓 ICMP数据包 #%{public}d: %{public}s -> %{public}s (%{public}d字节)",
                                      packetCount, srcIP, dstIP, readResult);
                     }
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 ICMP %s -> %s", packetCount, srcIP, dstIP);
+                    // 🔥 简化：移除冗余的PACKET日志（转发时已有日志）
                 } else {
                     // 🔥 简化：其他协议日志只在每20个或前5个时记录
                     if (packetCount <= 5 || packetCount % 20 == 0) {
@@ -461,7 +453,7 @@ void HandleReadTunfd(FdInfo fdInfo)
                                      "📦 其他协议数据包 #%{public}d: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节)",
                                      packetCount, protocol, srcIP, dstIP, readResult);
                     }
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 protocol=%d %s -> %s", packetCount, protocol, srcIP, dstIP);
+                    // 🔥 简化：移除冗余的PACKET日志（转发时已有日志）
                 }
             } else if (version == 6 && readResult >= 40) {  // IPv6
                 g_ipv6Packets.fetch_add(1);
@@ -477,32 +469,20 @@ void HandleReadTunfd(FdInfo fdInfo)
                 
                 if (nextHeader == 6) {  // TCP
                     g_ipv6TcpPackets.fetch_add(1);
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📊 IPv6 TCP数据包 #%{public}d: %{public}s -> %{public}s (大小=%{public}d字节)",
-                                 packetCount, srcIP, dstIP, readResult);
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 TCP %s -> %s", packetCount, srcIP, dstIP);
+                    // 🔥 简化：IPv6 TCP日志在转发时统一记录，这里不重复
                 } else if (nextHeader == 17) {  // UDP
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📊 IPv6 UDP数据包 #%{public}d: %{public}s -> %{public}s (大小=%{public}d字节)",
-                                 packetCount, srcIP, dstIP, readResult);
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 UDP %s -> %s", packetCount, srcIP, dstIP);
+                    // 🔥 简化：IPv6 UDP日志在转发时统一记录，这里不重复
                 } else if (nextHeader == 58) {  // ICMPv6
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📊 IPv6 ICMPv6数据包 #%{public}d: %{public}s -> %{public}s (大小=%{public}d字节)",
-                                 packetCount, srcIP, dstIP, readResult);
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 ICMPv6 %s -> %s", packetCount, srcIP, dstIP);
+                    // 🔥 简化：IPv6 ICMPv6日志在转发时统一记录，这里不重复
                 } else {
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📊 IPv6其他协议数据包 #%{public}d: 协议=%{public}d %{public}s -> %{public}s (大小=%{public}d字节)",
-                                 packetCount, nextHeader, srcIP, dstIP, readResult);
-                    NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv6 nextHeader=%d %s -> %s", packetCount, nextHeader, srcIP, dstIP);
+                    // 🔥 简化：IPv6其他协议日志在转发时统一记录，这里不重复
                 }
             } else {
                 // 数据包太小或版本未知，但仍然会被转发
                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
                              "⚠️ 未知/异常数据包 #%{public}d: IP版本=%{public}d (大小=%{public}d字节) - 仍将转发",
                              packetCount, version, readResult);
-                NETMANAGER_VPN_LOGI("📊 PACKET #%d: Unknown IP version %d", packetCount, version);
+                // 🔥 简化：移除冗余的PACKET日志
             }
         } else {
             // readResult < 1 的情况（理论上不会到这里，因为上面已经检查了readResult <= 0）
@@ -520,11 +500,6 @@ void HandleReadTunfd(FdInfo fdInfo)
             g_packetsDropped.fetch_add(1);
             break;
         }
-        
-        // 🔥 确保所有数据包都被转发（无论大小、版本、协议）
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                     "🔄 准备转发数据包 #%{public}d: 大小=%{public}d字节 -> VPN服务器 %{public}s:%{public}d",
-                     packetCount, readResult, inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
         
         // 🔥 转发前检查：隧道FD和服务器地址有效性
         if (fdInfo.tunnelFd < 0) {
@@ -573,14 +548,18 @@ void HandleReadTunfd(FdInfo fdInfo)
                                  srcIP, srcPort, dstIP, dstPort, serviceType, readResult,
                                  inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
                 } else if (protocol == 1) {  // ICMP
-                        VPN_CLIENT_LOGI("🚀 转发ICMP数据包: %{public}s -> %{public}s (%{public}d字节) -> VPN服务器 %{public}s:%{public}d",
-                                 srcIP, dstIP, readResult,
-                                 inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                    // 🔥 简化：ICMP转发日志只在每10个或前5个时记录
+                    if (packetCount <= 5 || packetCount % 10 == 0) {
+                        VPN_CLIENT_LOGI("🚀 转发ICMP #%{public}d: %{public}s -> %{public}s (%{public}d字节)",
+                                     packetCount, srcIP, dstIP, readResult);
+                    }
                 } else {
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "🚀 转发数据包: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节) -> VPN服务器 %{public}s:%{public}d",
-                                 protocol, srcIP, dstIP, readResult,
-                                 inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                    // 🔥 简化：其他协议转发日志只在每20个或前5个时记录
+                    if (packetCount <= 5 || packetCount % 20 == 0) {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                     "🚀 转发数据包 #%{public}d: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节)",
+                                     packetCount, protocol, srcIP, dstIP, readResult);
+                    }
                 }
             } else if (version == 6 && readResult >= 40) {  // IPv6
                 uint8_t nextHeader = buffer[6];
@@ -604,10 +583,12 @@ void HandleReadTunfd(FdInfo fdInfo)
                 else if (nextHeader == 58) protocolName = "ICMPv6";
                 else protocolName = "其他";
                 
-                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                             "🚀 转发IPv6数据包: %{public}s -> %{public}s (协议=%{public}s, %{public}d字节) -> VPN服务器 %{public}s:%{public}d",
-                             srcIP, dstIP, protocolName, readResult,
-                             inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                // 🔥 简化：IPv6转发日志只在每20个或前5个时记录
+                if (packetCount <= 5 || packetCount % 20 == 0) {
+                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                 "🚀 转发IPv6 #%{public}d: %{public}s -> %{public}s (协议=%{public}s, %{public}d字节)",
+                                 packetCount, srcIP, dstIP, protocolName, readResult);
+                }
             }
         }
         
