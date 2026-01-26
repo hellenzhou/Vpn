@@ -119,7 +119,7 @@ struct StartVpn {
             .width('40%')
             .textAlign(TextAlign.Center)
             .backgroundColor(0xAFEEEE);
-          TextInput({ text: '10.18.15.169' })
+          TextInput({ text: this.vpnServerIp })
             .onChange((value) => {
               this.vpnServerIp = value;
             })
@@ -133,7 +133,7 @@ struct StartVpn {
             .width('40%')
             .textAlign(TextAlign.Center)
             .backgroundColor(0xAFEEEE);
-          TextInput({ text: '223.5.5.5' })
+          TextInput({ text: this.icmpTargetIp })
             .onChange((value) => {
               this.icmpTargetIp = value;
             })
@@ -147,7 +147,7 @@ struct StartVpn {
             .width('40%')
             .textAlign(TextAlign.Center)
             .backgroundColor(0xAFEEEE);
-          TextInput({ text: '192.168.100.2' })
+          TextInput({ text: this.tunIp })
             .onChange((value) => {
               this.tunIp = value;
             })
