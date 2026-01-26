@@ -215,15 +215,41 @@ void HandleReadTunfd(FdInfo fdInfo)
     // 🔥 记录VPN启动时间，用于流量劫持检查
     g_vpnStartTime = time(nullptr);
     VPN_CLIENT_LOGI("[VPN客户端] VPN启动时间: %{public}lld, 开始监控流量劫持情况", (long long)g_vpnStartTime.load());
+    VPN_CLIENT_LOGI("[VPN客户端] 🔍🔍🔍 关键诊断：VPN启动后，如果浏览器仍能访问，说明VPN未拦截流量");
+    VPN_CLIENT_LOGI("[VPN客户端] 🔍🔍🔍 如果TUN设备没有数据包，说明VPN路由表未生效，流量走物理网络");
 
     uint8_t buffer[BUFFER_SIZE] = {0};
     int packetCount = 0;
+    time_t lastHeartbeat = time(nullptr);
 
     while (g_threadRunF) {
         // 检查文件描述符有效性
         if (fdInfo.tunFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunFd: %{public}d, stopping read loop", fdInfo.tunFd);
             break;
+        }
+
+        // 🔍 心跳日志：每30秒输出一次，确认TUN读取线程正在运行
+        time_t now = time(nullptr);
+        if (now - lastHeartbeat >= 30) {
+            lastHeartbeat = now;
+            int totalPackets = g_packetsReadFromTun.load();
+            int tcpPackets = g_ipv4TcpPackets.load() + g_ipv6TcpPackets.load();
+            int packetsSent = g_packetsSent.load();
+            int responsesReceived = g_responsesReceived.load();
+            time_t vpnUptime = now - g_vpnStartTime.load();
+            
+            VPN_CLIENT_LOGI("[VPN客户端] 💓 TUN读取线程心跳: VPN运行%{public}lld秒", (long long)vpnUptime);
+            VPN_CLIENT_LOGI("[VPN客户端] 💓 统计: TUN读取%{public}d包, TCP包%{public}d, 已发送%{public}d, 已收到响应%{public}d", 
+                          totalPackets, tcpPackets, packetsSent, responsesReceived);
+            
+            if (totalPackets == 0 && vpnUptime > 10) {
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 警告：VPN启动%{public}lld秒，但TUN设备未收到任何数据包！", (long long)vpnUptime);
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 结论：VPN路由表可能未生效，浏览器流量走物理网络（绕过VPN）");
+            } else if (totalPackets > 0 && packetsSent > 0 && responsesReceived == 0) {
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 警告：已发送%{public}d个数据包，但未收到任何响应！", packetsSent);
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 结论：代理服务器可能未运行，但浏览器仍能访问 = HarmonyOS可能已fallback到物理网络");
+            }
         }
 
         int readResult = read(fdInfo.tunFd, buffer, sizeof(buffer));
@@ -616,6 +642,13 @@ void HandleReadTunfd(FdInfo fdInfo)
             // 🔥 精简日志：转发失败时只打印一条错误信息
             VPN_CLIENT_LOGE("❌ 转发失败 #%{public}d: errno=%{public}d (%{public}s)",
                          packetCount, errno_save, strerror(errno_save));
+            
+            // 🔍 关键诊断：如果发送失败，可能是代理服务器不存在
+            if (errno_save == ECONNREFUSED || errno_save == EHOSTUNREACH || errno_save == ENETUNREACH) {
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 警告：无法连接到代理服务器 %{public}s:%{public}d", 
+                              inet_ntoa(fdInfo.serverAddr.sin_addr), ntohs(fdInfo.serverAddr.sin_port));
+                VPN_CLIENT_LOGE("[VPN客户端] ⚠️⚠️⚠️ 结论：代理服务器可能未运行，但浏览器仍能访问 = HarmonyOS可能已fallback到物理网络");
+            }
             continue;
         }
 
