@@ -49,7 +49,7 @@ export class DiagnoseExtensionAbility {
    */
   private static checkConfiguration(): void {
     hilog.info(0x0000, 'ZHOUB', '[诊断] 📋 检查配置...');
-     
+
   }
   
   /**
