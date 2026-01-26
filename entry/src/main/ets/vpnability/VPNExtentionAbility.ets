@@ -325,13 +325,16 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // 这样所有网络流量（包括DNS）都必须走VPN隧道
         this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         
-        // 🎯 正确配置：使用blockedApplications让代理服务器绕过VPN
-        // 根据HarmonyOS VPN的实际行为：
-        // - trustedApplications: 这些应用绕过VPN，直接访问物理网络
-        // - blockedApplications: 这些应用被阻止使用VPN（实际上也是绕过VPN）
-        // 代理服务器必须绕过VPN，避免路由循环
-        this.trustedApplications = [];  // 空数组 - 不使用白名单
-        this.blockedApplications = [blockedAppName];  // 使用传入的参数配置代理服务器绕过VPN
+        // 🎯 关键修复：使用trustedApplications让代理服务器绕过VPN
+        // HarmonyOS VPN API文档说明：
+        // - trustedApplications: 这些应用的流量直接访问物理网络，绕过VPN隧道
+        // - blockedApplications: 这些应用被禁止使用VPN连接（语义不明确）
+        // 
+        // ⚠️ 重要：代理服务器必须绕过VPN，否则其转发socket会被VPN劫持，形成路由循环！
+        // 
+        // 测试结果：blockedApplications未能有效阻止路由循环，改用trustedApplications
+        this.trustedApplications = [blockedAppName];  // ✅ 修复：使用trustedApplications让代理服务器绕过VPN
+        this.blockedApplications = [];  // 空数组 - 不阻止任何应用
         
         // 🔍 关键测试：虽然代理服务器绕过VPN，但浏览器流量应该仍然走VPN
         // 如果浏览器能访问，说明有流量绕过了VPN劫持！
@@ -389,7 +392,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 mtu: %{public}d', config.mtu);
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 dnsAddresses: %{public}s', JSON.stringify(config.dnsAddresses));
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 trustedApplications: %{public}s (这些应用绕过VPN，直接访问物理网络)', JSON.stringify(config.trustedApplications));
-      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 blockedApplications: %{public}s (空=所有其他应用走VPN)', JSON.stringify(config.blockedApplications));
+      hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 blockedApplications: %{public}s (这些应用被禁止使用VPN)', JSON.stringify(config.blockedApplications));
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 routes数量: %{public}d (IPv4+IPv6默认路由)', config.routes.length);
       for (let i = 0; i < config.routes.length; i++) {
         const route = config.routes[i];
@@ -401,22 +404,21 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 ⚠️ UDP隧道已通过vpnConnection.protect()保护，不会路由循环');
 
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 ========== 流量劫持配置验证 ==========');
-      if (config.blockedApplications.length === 0) {
-        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告：blockedApplications为空，代理服务器未配置绕过VPN，可能导致路由循环！');
+      if (config.trustedApplications.length === 0) {
+        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告：trustedApplications为空，代理服务器未配置绕过VPN，可能导致路由循环！');
       } else {
-        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ blockedApplications: %{public}s - 这些应用将绕过VPN（正确配置）', JSON.stringify(config.blockedApplications));
-        if (config.blockedApplications.includes(this.blockedAppName)) {
-          hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ 代理服务器已配置绕过VPN，避免路由循环');
+        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ trustedApplications: %{public}s - 这些应用将绕过VPN，直接访问物理网络', JSON.stringify(config.trustedApplications));
+        if (config.trustedApplications.includes(this.blockedAppName)) {
+          hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ 代理服务器已配置为受信任应用，其流量将绕过VPN，避免路由循环');
         } else {
-          hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 代理服务器未在blockedApplications中，可能导致路由循环！');
+          hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 代理服务器未在trustedApplications中，可能导致路由循环！');
         }
       }
       
       if (config.blockedApplications.length === 0) {
         hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ blockedApplications为空 - 不阻止任何应用使用VPN');
       } else {
-        hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 blockedApplications: %{public}s - 这些应用被阻止使用VPN', JSON.stringify(config.blockedApplications));
-
+        hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 blockedApplications: %{public}s - 这些应用被禁止使用VPN', JSON.stringify(config.blockedApplications));
       }
       
       if (config.routes.length >= 2) {
@@ -468,8 +470,8 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
             
             // 🔍 关键检查：验证VPN是否真正劫持流量
             hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [状态检查] gTunFd=%{public}d, gTunnelFd=%{public}d', gTunFd, gTunnelFd);
-            hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [状态检查] trustedApplications: %{public}s', JSON.stringify(config.trustedApplications));
-            hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [状态检查] blockedApplications: %{public}s', JSON.stringify(config.blockedApplications));
+            hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [状态检查] trustedApplications (绕过VPN): %{public}s', JSON.stringify(config.trustedApplications));
+            hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 [状态检查] blockedApplications (禁止VPN): %{public}s', JSON.stringify(config.blockedApplications));
             
             if (trafficCheckCount >= 12) {  // 检查1分钟
               clearInterval(trafficCheckInterval);
