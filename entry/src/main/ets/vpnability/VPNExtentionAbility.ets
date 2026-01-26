@@ -331,12 +331,12 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         // - blockedApplications: 这些应用被阻止使用VPN（实际上也是绕过VPN）
         // 代理服务器必须绕过VPN，避免路由循环
         
-        // 🧪 临时测试：先让代理服务器也走VPN，看是否能捕获流量
+        // ✅ 正确配置：让代理服务器绕过VPN，避免路由循环
         this.trustedApplications = [];  // 空数组 - 不使用白名单
-        this.blockedApplications = [];  // 🧪 临时改为空数组 - 测试是否能捕获流量
+        this.blockedApplications = [blockedAppName];  // ✅ 代理服务器绕过VPN
         
-        hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🧪 测试模式：blockedApplications为空，所有应用都走VPN');
-        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 这可能导致路由循环，仅用于测试流量是否被捕获');
+        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ 正确配置：代理服务器绕过VPN，避免路由循环');
+        hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📋 blockedApplications = ["%{public}s"]', blockedAppName);
         
         // 🔍 关键测试：虽然代理服务器绕过VPN，但浏览器流量应该仍然走VPN
         // 如果浏览器能访问，说明有流量绕过了VPN劫持！
