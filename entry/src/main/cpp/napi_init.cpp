@@ -903,8 +903,18 @@ void HandleTcpReceived(FdInfo fdInfo)
     socklen_t addrlen = sizeof(struct sockaddr_in);
     uint8_t buffer[BUFFER_SIZE] = {0};
     int responseCount = 0;
+    int loopCount = 0;  // 🔍 诊断：循环计数器
+    int timeoutCount = 0;  // 🔍 诊断：超时计数器
 
     while (g_threadRunF) {
+        loopCount++;
+        
+        // 🔍 诊断：每10秒输出一次心跳
+        if (loopCount % 10 == 0) {
+            VPN_CLIENT_LOGI("💓 接收线程心跳: 循环#%{public}d, 已收到%{public}d个响应, 超时%{public}d次",
+                          loopCount, responseCount, timeoutCount);
+        }
+        
         // 检查文件描述符有效性
         if (fdInfo.tunnelFd < 0) {
             NETMANAGER_VPN_LOGE("Invalid tunnelFd: %{public}d, stopping receive loop", fdInfo.tunnelFd);
@@ -915,8 +925,16 @@ void HandleTcpReceived(FdInfo fdInfo)
         ssize_t length = recvfrom(fdInfo.tunnelFd, buffer, sizeof(buffer),
             0, reinterpret_cast<struct sockaddr *>(&fdInfo.serverAddr), &addrlen);
         if (length < 0) {
-            if (errno != EAGAIN) {
-                NETMANAGER_VPN_LOGE("read tun device error: %{public}d，tunnelfd: %{public}d", errno, fdInfo.tunnelFd);
+            // 🔍 诊断：详细记录recvfrom错误
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                timeoutCount++;
+                if (timeoutCount % 10 == 0) {  // 每10次超时记录一次
+                    VPN_CLIENT_LOGI("⏰ recvfrom超时(EAGAIN): 累计%{public}d次 (tunnelFd=%{public}d)", 
+                                  timeoutCount, fdInfo.tunnelFd);
+                }
+            } else {
+                NETMANAGER_VPN_LOGE("❌ recvfrom错误: errno=%{public}d (%{public}s), tunnelFd=%{public}d", 
+                                  errno, strerror(errno), fdInfo.tunnelFd);
             }
             continue;
         }
@@ -1149,7 +1167,7 @@ static napi_value UdpConnect(napi_env env, napi_callback_info info)
 
     // 步骤2: 设置socket选项（超时）
     NETMANAGER_VPN_LOGI("⏰ 步骤2: 设置socket接收超时...");
-    struct timeval timeout = {1, 0};
+    struct timeval timeout = {5, 0};  // 🔧 修改：从1秒增加到5秒，避免响应超时
     int setsockopt_result = setsockopt(sockFd, SOL_SOCKET, SO_RCVTIMEO, 
                                        reinterpret_cast<const char*>(&timeout), sizeof(struct timeval));
     if (setsockopt_result == -1) {
@@ -1157,7 +1175,7 @@ static napi_value UdpConnect(napi_env env, napi_callback_info info)
         NETMANAGER_VPN_LOGE("⚠️ setsockopt(SO_RCVTIMEO) 失败: errno=%{public}d, %{public}s", errno_save, strerror(errno_save));
         NETMANAGER_VPN_LOGI("⚠️ 继续执行，超时设置失败不影响UDP连接");
     } else {
-        NETMANAGER_VPN_LOGI("✅ 步骤2完成: Socket接收超时已设置为1秒");
+        NETMANAGER_VPN_LOGI("✅ 步骤2完成: Socket接收超时已设置为5秒");
     }
 
     // 步骤3: 配置服务器地址
