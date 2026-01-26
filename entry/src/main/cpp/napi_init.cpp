@@ -65,14 +65,26 @@ static std::thread g_threadT1;
 static std::thread g_threadT2;
 
  
-// 📊 简化的全局统计计数器
+// 📊 全局统计计数器（保持完整以避免编译错误）
 static std::atomic<int> g_packetsSent{0};  // 发送的数据包计数
 static std::atomic<int> g_responsesReceived{0};  // 接收的响应计数
+static std::atomic<time_t> g_lastResponseTime{0};  // 最后一次收到响应的时间
+static std::atomic<int> g_ipv4Packets{0};  // IPv4数据包计数
+static std::atomic<int> g_ipv6Packets{0};  // IPv6数据包计数
+static std::atomic<int> g_ipv4TcpPackets{0};  // IPv4 TCP数据包计数
+static std::atomic<int> g_ipv6TcpPackets{0};  // IPv6 TCP数据包计数
+static std::atomic<int> g_httpPackets{0};  // HTTP数据包计数 (端口80)
+static std::atomic<int> g_httpsPackets{0};  // HTTPS数据包计数 (端口443)
+static std::atomic<int> g_detailedLogCount{0};  // 详细日志计数器
+static std::atomic<int> g_packetsReadFromTun{0};  // 从TUN读取的数据包总数
 static std::atomic<int> g_packetsForwarded{0};  // 成功转发的数据包总数
+static std::atomic<int> g_packetsDropped{0};  // 被丢弃的数据包总数
 static std::atomic<int> g_packetsSendFailed{0};  // 发送失败的数据包数
 static std::atomic<time_t> g_vpnStartTime{0};  // VPN启动时间
+static std::atomic<int> g_trafficCheckInterval{0};  // 流量检查间隔计数器
+static std::atomic<int> g_tcpOutLogCount{0};  // TCP出站日志计数（限量）
 static std::atomic<time_t> g_lastTunReadTime{0};  // 最后一次从TUN读取数据包的时间
-static std::atomic<bool> g_hasTraffic{false};  // 是否检测到流量
+static std::atomic<time_t> g_lastStateCheckTime{0};  // 最后一次状态检查的时间
 
 
 static constexpr const int MAX_STRING_LENGTH = 1024;
