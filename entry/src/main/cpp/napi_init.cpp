@@ -26,6 +26,8 @@
 #include <sys/socket.h>
 #include <thread>
 #include <sys/time.h>
+#include <netinet/ip.h>
+#include <netinet/ip_icmp.h>
  
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -85,6 +87,23 @@ static std::atomic<time_t> g_lastStateCheckTime{0};  // 最后一次状态检查
 
 
 static constexpr const int MAX_STRING_LENGTH = 1024;
+
+uint16_t CalcChecksum(const void* data, size_t length)
+{
+    uint32_t sum = 0;
+    const uint16_t* ptr = static_cast<const uint16_t*>(data);
+    while (length > 1) {
+        sum += *ptr++;
+        length -= 2;
+    }
+    if (length == 1) {
+        sum += *reinterpret_cast<const uint8_t*>(ptr);
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    return static_cast<uint16_t>(~sum);
+}
 
 std::string GetStringFromValueUtf8(napi_env env, napi_value value)
 {
@@ -1219,6 +1238,150 @@ static napi_value StopVpn(napi_env env, napi_callback_info info)
     return retValue;
 }
 
+static napi_value IcmpEchoTest(napi_env env, napi_callback_info info)
+{
+    NETMANAGER_VPN_LOGI("========== IcmpEchoTest() 开始执行 ==========");
+
+    size_t argc = 2;
+    napi_value args[2] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    if (argc < 1) {
+        NETMANAGER_VPN_LOGE("❌ 参数不足: 需要1个参数(IPv4地址)，可选超时(ms)");
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+
+    std::string ipAddr = GetStringFromValueUtf8(env, args[0]);
+    if (ipAddr.empty()) {
+        NETMANAGER_VPN_LOGE("❌ IP地址参数为空或无效");
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+
+    int32_t timeoutMs = 1000;
+    if (argc >= 2) {
+        napi_get_value_int32(env, args[1], &timeoutMs);
+        if (timeoutMs <= 0) {
+            timeoutMs = 1000;
+        }
+    }
+
+    NETMANAGER_VPN_LOGI("📡 使用 SOCK_DGRAM + IPPROTO_ICMP 发送Echo请求");
+    NETMANAGER_VPN_LOGI("🎯 目标IP=%{public}s, 超时=%{public}dms", ipAddr.c_str(), timeoutMs);
+
+    int sockFd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (sockFd < 0) {
+        int errno_save = errno;
+        NETMANAGER_VPN_LOGE("❌ socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP) 失败: errno=%{public}d (%{public}s)",
+                            errno_save, strerror(errno_save));
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+
+    struct timeval timeout = {timeoutMs / 1000, (timeoutMs % 1000) * 1000};
+    if (setsockopt(sockFd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout),
+                   sizeof(timeout)) == -1) {
+        int errno_save = errno;
+        NETMANAGER_VPN_LOGE("⚠️ setsockopt(SO_RCVTIMEO) 失败: errno=%{public}d (%{public}s)",
+                            errno_save, strerror(errno_save));
+    }
+
+    struct sockaddr_in dstAddr {};
+    dstAddr.sin_family = AF_INET;
+    if (inet_pton(AF_INET, ipAddr.c_str(), &dstAddr.sin_addr) != 1) {
+        NETMANAGER_VPN_LOGE("❌ inet_pton() 解析失败: %{public}s", ipAddr.c_str());
+        close(sockFd);
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+
+    uint8_t sendBuf[64] = {0};
+    const char* payload = "OHOS-ICMP-TEST";
+    const size_t payloadLen = strlen(payload);
+    const size_t icmpLen = sizeof(struct icmphdr) + payloadLen;
+    struct icmphdr* icmp = reinterpret_cast<struct icmphdr*>(sendBuf);
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0;
+    icmp->un.echo.id = htons(static_cast<uint16_t>(getpid() & 0xFFFF));
+    icmp->un.echo.sequence = htons(1);
+    memcpy(sendBuf + sizeof(struct icmphdr), payload, payloadLen);
+    icmp->checksum = 0;
+    icmp->checksum = CalcChecksum(sendBuf, icmpLen);
+
+    ssize_t sent = sendto(sockFd, sendBuf, icmpLen, 0,
+                          reinterpret_cast<struct sockaddr*>(&dstAddr), sizeof(dstAddr));
+    if (sent < 0) {
+        int errno_save = errno;
+        NETMANAGER_VPN_LOGE("❌ sendto() 失败: errno=%{public}d (%{public}s)", errno_save, strerror(errno_save));
+        close(sockFd);
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+    NETMANAGER_VPN_LOGI("✅ Echo Request 已发送: %{public}d字节", static_cast<int>(sent));
+
+    uint8_t recvBuf[1500] = {0};
+    struct sockaddr_in srcAddr {};
+    socklen_t addrLen = sizeof(srcAddr);
+    ssize_t recvLen = recvfrom(sockFd, recvBuf, sizeof(recvBuf), 0,
+                               reinterpret_cast<struct sockaddr*>(&srcAddr), &addrLen);
+    if (recvLen < 0) {
+        int errno_save = errno;
+        NETMANAGER_VPN_LOGE("❌ recvfrom() 超时或失败: errno=%{public}d (%{public}s)", errno_save, strerror(errno_save));
+        close(sockFd);
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+
+    const uint8_t* icmpStart = recvBuf;
+    size_t icmpRecvLen = recvLen;
+    if (recvLen >= static_cast<ssize_t>(sizeof(struct iphdr))) {
+        const struct iphdr* ip = reinterpret_cast<const struct iphdr*>(recvBuf);
+        if (ip->version == 4) {
+            size_t ipHeaderLen = ip->ihl * 4;
+            if (recvLen >= static_cast<ssize_t>(ipHeaderLen + sizeof(struct icmphdr))) {
+                icmpStart = recvBuf + ipHeaderLen;
+                icmpRecvLen = recvLen - ipHeaderLen;
+            }
+        }
+    }
+
+    if (icmpRecvLen < sizeof(struct icmphdr)) {
+        NETMANAGER_VPN_LOGE("❌ 收到的数据过短，无法解析ICMP响应");
+        close(sockFd);
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+
+    const struct icmphdr* reply = reinterpret_cast<const struct icmphdr*>(icmpStart);
+    uint16_t replyId = ntohs(reply->un.echo.id);
+    uint16_t expectedId = static_cast<uint16_t>(getpid() & 0xFFFF);
+    if (reply->type == ICMP_ECHOREPLY && replyId == expectedId) {
+        char srcIpStr[INET_ADDRSTRLEN] = {0};
+        inet_ntop(AF_INET, &srcAddr.sin_addr, srcIpStr, sizeof(srcIpStr));
+        NETMANAGER_VPN_LOGI("✅ 收到Echo Reply: src=%{public}s id=%{public}u seq=%{public}u",
+                            srcIpStr, replyId, ntohs(reply->un.echo.sequence));
+        close(sockFd);
+        napi_value retValue;
+        napi_create_int32(env, 0, &retValue);
+        return retValue;
+    }
+
+    NETMANAGER_VPN_LOGE("❌ 收到非预期ICMP响应: type=%{public}d id=%{public}u",
+                        reply->type, replyId);
+    close(sockFd);
+    napi_value retValue;
+    napi_create_int32(env, -1, &retValue);
+    return retValue;
+}
+
 // 🔥 新增：保护转发socket的native接口
 static napi_value ProtectForwardingSocket(napi_env env, napi_callback_info info)
 {
@@ -1280,6 +1443,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"udpConnect", nullptr, UdpConnect, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"startVpn", nullptr, StartVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopVpn", nullptr, StopVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"icmpEchoTest", nullptr, IcmpEchoTest, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"protectForwardingSocket", nullptr, ProtectForwardingSocket, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getNextSocketToProtect", nullptr, GetNextSocketToProtect, nullptr, nullptr, nullptr, napi_default, nullptr},
     };

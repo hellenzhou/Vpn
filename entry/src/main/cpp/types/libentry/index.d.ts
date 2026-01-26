@@ -16,6 +16,7 @@
 export const udpConnect:(addr:string,port:number)=>number;
 export const startVpn:(tunFd:number,tunnelFd:number)=>number;
 export const stopVpn:(tunnelFd:number)=>number;
+export const icmpEchoTest:(addr:string,timeoutMs?:number)=>number;
 // Request the ETS layer to protect the given socket fd via VpnConnection.protect()
 export const protectForwardingSocket:(sockFd:number)=>number;
 // Poll next socket fd that should be protected; returns -1 if none.
