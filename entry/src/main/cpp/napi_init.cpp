@@ -323,12 +323,38 @@ void HandleReadTunfd(FdInfo fdInfo)
                                            (static_cast<uint32_t>(buffer[ipHeaderLen + 9]) << 16) |
                                            (static_cast<uint32_t>(buffer[ipHeaderLen + 10]) << 8) |
                                            (static_cast<uint32_t>(buffer[ipHeaderLen + 11]));
+                            
+                            // 解析TCP标志位为可读字符串
+                            char flagsStr[64] = {0};
+                            int flagPos = 0;
+                            if (flags & 0x02) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "SYN|");
+                            if (flags & 0x10) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "ACK|");
+                            if (flags & 0x01) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "FIN|");
+                            if (flags & 0x04) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "RST|");
+                            if (flags & 0x08) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "PSH|");
+                            if (flags & 0x20) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "URG|");
+                            if (flagPos > 0) flagsStr[flagPos - 1] = '\0';  // 移除最后的'|'
+                            else snprintf(flagsStr, sizeof(flagsStr), "NONE");
+                            
+                            // 计算payload大小
+                            uint8_t tcpHeaderLen = ((buffer[ipHeaderLen + 12] >> 4) & 0x0F) * 4;
+                            int tcpPayloadSize = readResult - ipHeaderLen - tcpHeaderLen;
+                            if (tcpPayloadSize < 0) tcpPayloadSize = 0;
+                            
                             int logIndex = g_tcpOutLogCount.fetch_add(1);
                             bool isWeb = (dstPort == 80 || dstPort == 443);
                             if ((isWeb && logIndex < 50) || (!isWeb && logIndex < 10)) {
                                 OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                             "TCP_TUN_OUT flags=0x%{public}02x seq=%{public}u ack=%{public}u %{public}s:%{public}d -> %{public}s:%{public}d (size=%{public}d)",
-                                             flags, seq, ack, srcIP, srcPort, dstIP, dstPort, readResult);
+                                             "🔍🔍🔍 [VPN客户端-发送TCP] %{public}s:%{public}d -> %{public}s:%{public}d",
+                                             srcIP, srcPort, dstIP, dstPort);
+                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                             "  ├─ 标志: [%{public}s] (0x%{public}02x)", flagsStr, flags);
+                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                             "  ├─ seq=%{public}u ack=%{public}u", seq, ack);
+                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                             "  ├─ payload: %{public}d字节 (总长度: %{public}d字节)", tcpPayloadSize, readResult);
+                                OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                             "  └─ 即将转发到代理服务器(127.0.0.1:8888)");
                             }
                         }
                         
@@ -947,9 +973,35 @@ void HandleTcpReceived(FdInfo fdInfo)
                                        (static_cast<uint32_t>(buffer[ipHeaderLen + 9]) << 16) |
                                        (static_cast<uint32_t>(buffer[ipHeaderLen + 10]) << 8) |
                                        (static_cast<uint32_t>(buffer[ipHeaderLen + 11]));
+                        
+                        // 解析TCP标志位为可读字符串
+                        char flagsStr[64] = {0};
+                        int flagPos = 0;
+                        if (flags & 0x02) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "SYN|");
+                        if (flags & 0x10) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "ACK|");
+                        if (flags & 0x01) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "FIN|");
+                        if (flags & 0x04) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "RST|");
+                        if (flags & 0x08) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "PSH|");
+                        if (flags & 0x20) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "URG|");
+                        if (flagPos > 0) flagsStr[flagPos - 1] = '\0';  // 移除最后的'|'
+                        else snprintf(flagsStr, sizeof(flagsStr), "NONE");
+                        
+                        // 计算payload大小
+                        uint8_t tcpHeaderLen = ((buffer[ipHeaderLen + 12] >> 4) & 0x0F) * 4;
+                        int tcpPayloadSize = length - ipHeaderLen - tcpHeaderLen;
+                        if (tcpPayloadSize < 0) tcpPayloadSize = 0;
+                        
                         OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                     "📥 TCP响应标志: flags=0x%{public}02x seq=%{public}u ack=%{public}u %{public}s:%{public}d -> %{public}s:%{public}d",
-                                     flags, seq, ack, srcIP, srcPort, dstIP, dstPort);
+                                     "🔍🔍🔍 [VPN客户端-收到TCP] %{public}s:%{public}d -> %{public}s:%{public}d",
+                                     srcIP, srcPort, dstIP, dstPort);
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "  ├─ 标志: [%{public}s] (0x%{public}02x)", flagsStr, flags);
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "  ├─ seq=%{public}u ack=%{public}u", seq, ack);
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "  ├─ payload: %{public}d字节 (总长度: %{public}d字节)", tcpPayloadSize, length);
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
+                                     "  └─ 即将写入TUN设备");
                     }
                     const char* serviceType = "";
                     if (srcPort == 80) serviceType = " [HTTP响应]";
