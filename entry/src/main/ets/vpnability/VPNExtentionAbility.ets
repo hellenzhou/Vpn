@@ -325,7 +325,10 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
         this.dnsAddresses = [];  // 空数组 = DNS查询也走VPN隧道
         
         // 🎯 正确配置：使用blockedApplications让代理服务器绕过VPN
-        // 根据官方文档：blockedApplications中的应用不会被VPN代理，其他应用走VPN
+        // 根据HarmonyOS VPN的实际行为：
+        // - trustedApplications: 这些应用绕过VPN，直接访问物理网络
+        // - blockedApplications: 这些应用被阻止使用VPN（实际上也是绕过VPN）
+        // 代理服务器必须绕过VPN，避免路由循环
         this.trustedApplications = [];  // 空数组 - 不使用白名单
         this.blockedApplications = [blockedAppName];  // 使用传入的参数配置代理服务器绕过VPN
         
@@ -397,15 +400,14 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 📊 ⚠️ UDP隧道已通过vpnConnection.protect()保护，不会路由循环');
 
       hilog.info(0x0000, 'ZHOUB', '[扩展能力] 🔍 ========== 流量劫持配置验证 ==========');
-      if (config.trustedApplications.length === 0) {
-
-        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告：这会导致路由循环，代理转发将失败！');
+      if (config.blockedApplications.length === 0) {
+        hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 警告：blockedApplications为空，代理服务器未配置绕过VPN，可能导致路由循环！');
       } else {
-        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ trustedApplications: %{public}s - 这些应用将绕过VPN（正确配置）', JSON.stringify(config.trustedApplications));
-        if (config.trustedApplications.includes('ellen.vpnserver')) {
+        hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ blockedApplications: %{public}s - 这些应用将绕过VPN（正确配置）', JSON.stringify(config.blockedApplications));
+        if (config.blockedApplications.includes(this.blockedAppName)) {
           hilog.info(0x0000, 'ZHOUB', '[扩展能力] ✅ 代理服务器已配置绕过VPN，避免路由循环');
         } else {
-          hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 代理服务器未在trustedApplications中，可能导致路由循环！');
+          hilog.error(0x0000, 'ZHOUB', '[扩展能力] ⚠️ 代理服务器未在blockedApplications中，可能导致路由循环！');
         }
       }
       
