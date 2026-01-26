@@ -396,10 +396,6 @@ void HandleReadTunfd(FdInfo fdInfo)
                             }
                         }
                         
-                        // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
-                        VPN_CLIENT_LOGI("[TUN->Proxy] src=%{public}s:%{public}d dst=%{public}s:%{public}d proto=TCP size=%{public}d",
-                                     srcIP, srcPort, dstIP, dstPort, readResult);
-                        
                         // 追踪HTTP/HTTPS流量
                         const char* serviceLabel = "";
                         bool isHttpTraffic = false;
@@ -413,24 +409,13 @@ void HandleReadTunfd(FdInfo fdInfo)
                             isHttpTraffic = true;
                         }
                         
-                        // 🔥 精简日志：只记录前5个HTTP/HTTPS连接
+                        // 🔥 简化：TCP日志在转发时统一记录，这里只记录HTTP/HTTPS的前5个
                         if (isHttpTraffic && g_detailedLogCount < 5) {
                             g_detailedLogCount.fetch_add(1);
                             OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                         "🌐 %{public}s: %{public}s:%{public}d -> %{public}s:%{public}d",
-                                         serviceLabel, srcIP, srcPort, dstIP, dstPort);
+                                         "🌐 %{public}s #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节)",
+                                         serviceLabel, packetCount, srcIP, srcPort, dstIP, dstPort, readResult);
                         }
-                        
-                        // 🔥 记录所有TCP连接（包括HTTP/HTTPS）
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                     "📊 TCP数据包 #%{public}d: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (大小=%{public}d字节)",
-                                     packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel, readResult);
-                        
-                        NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 TCP %s:%d -> %s:%d%s", 
-                                           packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                     "[VPN客户端] 📊 数据包 #%{public}d: IPv4 TCP %{public}s:%{public}d -> %{public}s:%{public}d%{public}s",
-                                     packetCount, srcIP, srcPort, dstIP, dstPort, serviceLabel);
                     }
                 } else                 if (protocol == 17) {  // UDP
                     if (readResult >= 28) {
@@ -449,9 +434,7 @@ void HandleReadTunfd(FdInfo fdInfo)
                             continue;  // 跳过转发，控制消息不发送到服务器
                         }
 
-                        // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
-                        VPN_CLIENT_LOGI("[TUN->Proxy] src=%{public}s:%{public}d dst=%{public}s:%{public}d proto=UDP size=%{public}d",
-                                     srcIP, srcPort, dstIP, dstPort, readResult);
+                        // 🔥 简化：UDP日志在转发时统一记录，这里不重复
 
                         // 🔥 简化：DNS查询日志在转发时统一记录，这里只记录非DNS的UDP
                         if (dstPort != 53) {
@@ -464,22 +447,20 @@ void HandleReadTunfd(FdInfo fdInfo)
                     }
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 UDP %s -> %s", packetCount, srcIP, dstIP);
                 } else if (protocol == 1) {  // ICMP
-                    // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "[TUN→代理] 源IP:%{public}s 目的IP:%{public}s 源端口:0 目的端口:0 协议:ICMP 大小:%{public}d字节",
-                                 srcIP, dstIP, readResult);
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "🏓 ICMP数据包: %{public}s -> %{public}s (大小=%{public}d字节)",
-                                 srcIP, dstIP, readResult);
+                    // 🔥 简化：ICMP日志只在每10个或前5个时记录
+                    if (packetCount <= 5 || packetCount % 10 == 0) {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                     "🏓 ICMP数据包 #%{public}d: %{public}s -> %{public}s (%{public}d字节)",
+                                     packetCount, srcIP, dstIP, readResult);
+                    }
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 ICMP %s -> %s", packetCount, srcIP, dstIP);
                 } else {
-                    // 🔥 ZHOUB日志：TUN设备转发到代理服务器前
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "[TUN→代理] 源IP:%{public}s 目的IP:%{public}s 源端口:0 目的端口:0 协议:%{public}d 大小:%{public}d字节",
-                                 srcIP, dstIP, protocol, readResult);
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📦 其他协议数据包: 协议=%{public}d %{public}s -> %{public}s (大小=%{public}d字节)",
-                                 protocol, srcIP, dstIP, readResult);
+                    // 🔥 简化：其他协议日志只在每20个或前5个时记录
+                    if (packetCount <= 5 || packetCount % 20 == 0) {
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
+                                     "📦 其他协议数据包 #%{public}d: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节)",
+                                     packetCount, protocol, srcIP, dstIP, readResult);
+                    }
                     NETMANAGER_VPN_LOGI("📊 PACKET #%d: IPv4 protocol=%d %s -> %s", packetCount, protocol, srcIP, dstIP);
                 }
             } else if (version == 6 && readResult >= 40) {  // IPv6
