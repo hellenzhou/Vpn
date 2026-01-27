@@ -905,8 +905,19 @@ void HandleTcpReceived(FdInfo fdInfo)
         
         // 🔍 诊断：每10秒输出一次心跳
         if (loopCount % 10 == 0) {
+            int packetsSent = g_packetsSent.load();
+            int responsesReceived = g_responsesReceived.load();
+            double responseRate = packetsSent > 0 ? (100.0 * responsesReceived / packetsSent) : 0.0;
             VPN_CLIENT_LOGI("💓 接收线程心跳: 循环#%{public}d, 已收到%{public}d个响应, 超时%{public}d次",
                           loopCount, responseCount, timeoutCount);
+            VPN_CLIENT_LOGI("📊 响应统计: 已发送%{public}d包, 已收到%{public}d响应, 响应率%.2f%%",
+                          packetsSent, responsesReceived, responseRate);
+            
+            // 🔥 警告：如果响应率过低，提示可能的问题
+            if (packetsSent > 100 && responseRate < 5.0) {
+                VPN_CLIENT_LOGE("⚠️ 响应率过低(%.2f%%)，可能原因：1)代理服务器未运行 2)代理服务器处理错误 3)网络问题",
+                              responseRate);
+            }
         }
         
         // 检查文件描述符有效性
@@ -926,9 +937,13 @@ void HandleTcpReceived(FdInfo fdInfo)
                     VPN_CLIENT_LOGI("⏰ recvfrom超时(EAGAIN): 累计%{public}d次 (tunnelFd=%{public}d)", 
                                   timeoutCount, fdInfo.tunnelFd);
                 }
+                // 🔧 修复：超时后添加延迟，避免CPU占用过高，同时给代理服务器时间发送响应
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             } else {
                 NETMANAGER_VPN_LOGE("❌ recvfrom错误: errno=%{public}d (%{public}s), tunnelFd=%{public}d", 
                                   errno, strerror(errno), fdInfo.tunnelFd);
+                // 🔧 修复：其他错误也添加延迟，避免快速循环
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             continue;
         }
@@ -1500,6 +1515,115 @@ static napi_value GetNextSocketToProtect(napi_env env, napi_callback_info info)
     napi_create_int32(env, sockFd, &retValue);
     return retValue;
 }
+
+// 🔥 新增：测试代理服务器连接
+static napi_value TestProxyServer(napi_env env, napi_callback_info info)
+{
+    VPN_CLIENT_LOGI("========== TestProxyServer() 开始执行 ==========");
+    
+    size_t argc = 2;
+    napi_value args[2] = { nullptr };
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    
+    // 获取IP地址和端口参数
+    std::string serverIp = "127.0.0.1";
+    int32_t port = 8888;
+    
+    if (argc >= 1) {
+        serverIp = GetStringFromValueUtf8(env, args[0]);
+    }
+    if (argc >= 2) {
+        napi_get_value_int32(env, args[1], &port);
+    }
+    
+    VPN_CLIENT_LOGI("🔍 测试代理服务器: %{public}s:%{public}d", serverIp.c_str(), port);
+    
+    // 创建UDP socket
+    int testSock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (testSock < 0) {
+        VPN_CLIENT_LOGE("❌ 创建测试socket失败: %{public}s", strerror(errno));
+        napi_value retValue;
+        napi_create_int32(env, -1, &retValue);
+        return retValue;
+    }
+    
+    // 设置接收超时
+    struct timeval timeout = {2, 0};  // 2秒超时
+    setsockopt(testSock, SOL_SOCKET, SO_RCVTIMEO, 
+               reinterpret_cast<const char*>(&timeout), sizeof(struct timeval));
+    
+    // 配置服务器地址
+    struct sockaddr_in serverAddr {};
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(static_cast<uint16_t>(port));
+    
+    if (inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr) <= 0) {
+        VPN_CLIENT_LOGE("❌ IP地址格式无效: %{public}s", serverIp.c_str());
+        close(testSock);
+        napi_value retValue;
+        napi_create_int32(env, -2, &retValue);
+        return retValue;
+    }
+    
+    // 发送ping测试包
+    const char* pingMsg = "ping";
+    ssize_t sent = sendto(testSock, pingMsg, strlen(pingMsg), 0,
+                         reinterpret_cast<struct sockaddr*>(&serverAddr), sizeof(serverAddr));
+    
+    if (sent < 0) {
+        int errno_save = errno;
+        VPN_CLIENT_LOGE("❌ 发送测试包失败: errno=%{public}d (%{public}s)", errno_save, strerror(errno_save));
+        close(testSock);
+        napi_value retValue;
+        napi_create_int32(env, -3, &retValue);
+        return retValue;
+    }
+    
+    VPN_CLIENT_LOGI("✅ 测试包已发送 (%{public}zd字节)", sent);
+    
+    // 等待响应
+    char buffer[1024] = {0};
+    struct sockaddr_in fromAddr {};
+    socklen_t fromLen = sizeof(fromAddr);
+    
+    ssize_t received = recvfrom(testSock, buffer, sizeof(buffer) - 1, 0,
+                               reinterpret_cast<struct sockaddr*>(&fromAddr), &fromLen);
+    
+    close(testSock);
+    
+    if (received < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT) {
+            VPN_CLIENT_LOGE("❌ 接收响应超时：代理服务器可能未运行或未响应");
+            napi_value retValue;
+            napi_create_int32(env, -4, &retValue);
+            return retValue;
+        } else {
+            VPN_CLIENT_LOGE("❌ 接收响应失败: errno=%{public}d (%{public}s)", errno, strerror(errno));
+            napi_value retValue;
+            napi_create_int32(env, -5, &retValue);
+            return retValue;
+        }
+    }
+    
+    buffer[received] = '\0';
+    
+    // 检查响应
+    if (received == 4 && strncmp(buffer, "pong", 4) == 0) {
+        char fromIp[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &fromAddr.sin_addr, fromIp, sizeof(fromIp));
+        VPN_CLIENT_LOGI("✅ 代理服务器响应正常: 收到'pong'来自 %{public}s:%{public}d", 
+                       fromIp, ntohs(fromAddr.sin_port));
+        napi_value retValue;
+        napi_create_int32(env, 0, &retValue);
+        return retValue;
+    } else {
+        VPN_CLIENT_LOGE("❌ 收到异常响应: %{public}s (%{public}zd字节)", buffer, received);
+        napi_value retValue;
+        napi_create_int32(env, -6, &retValue);
+        return retValue;
+    }
+}
  
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
@@ -1511,6 +1635,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"icmpEchoTest", nullptr, IcmpEchoTest, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"protectForwardingSocket", nullptr, ProtectForwardingSocket, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getNextSocketToProtect", nullptr, GetNextSocketToProtect, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"testProxyServer", nullptr, TestProxyServer, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

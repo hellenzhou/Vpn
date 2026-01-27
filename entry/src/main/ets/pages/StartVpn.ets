@@ -87,6 +87,26 @@ struct StartVpn {
     }
   }
 
+  TestProxyServer() {
+    hilog.info(0x0000, 'ZHOUB', '[主页] 🔍 开始测试代理服务器: %{public}s:%{public}d', this.vpnServerIp, 8888);
+    let result = vpn_client.testProxyServer(this.vpnServerIp, 8888);
+    if (result === 0) {
+      showToast('✅ 代理服务器连接正常', BUTTON_SUCCESS_MESSAGE);
+      hilog.info(0x0000, 'ZHOUB', '[主页] ✅ 代理服务器连接正常');
+    } else {
+      let errorMsg = '❌ 代理服务器连接失败';
+      if (result === -4) {
+        errorMsg = '❌ 代理服务器未响应（可能未运行）';
+      } else if (result === -3) {
+        errorMsg = '❌ 无法发送测试包';
+      } else if (result === -2) {
+        errorMsg = '❌ IP地址格式无效';
+      }
+      showToast(errorMsg, BUTTON_SUCCESS_MESSAGE);
+      hilog.error(0x0000, 'ZHOUB', '[主页] ❌ 代理服务器测试失败: code=%{public}d', result);
+    }
+  }
+
   Protect() {
     let tunnelFd = gTunnelFd;
     hilog.info(0x0000, 'testTag', 'developTag', '[ZHOUB] vpn Protect, tunnelFd: %{public}d', tunnelFd);
@@ -184,6 +204,14 @@ struct StartVpn {
           .width('70%')
           .fontSize(BUTTON_FONT_SIZE)
           .margin(BUTTON_MARGIN);
+        Button('🔍 测试代理服务器连接')
+          .onClick(() => {
+            this.TestProxyServer();
+          })
+          .width('70%')
+          .fontSize(BUTTON_FONT_SIZE)
+          .margin(BUTTON_MARGIN)
+          .backgroundColor(0x4CAF50);
         Button($r('app.string.Protect'))
           .onClick(() => {
             this.Protect();

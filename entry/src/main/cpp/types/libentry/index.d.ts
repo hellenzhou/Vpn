@@ -21,3 +21,5 @@ export const icmpEchoTest:(addr:string,timeoutMs?:number)=>number;
 export const protectForwardingSocket:(sockFd:number)=>number;
 // Poll next socket fd that should be protected; returns -1 if none.
 export const getNextSocketToProtect:()=>number;
+// Test proxy server connection: returns 0 on success, negative on error
+export const testProxyServer:(serverIp?:string,port?:number)=>number;
