@@ -51,7 +51,6 @@ struct StartVpn {
   // - 同设备应用间通信：使用 127.0.0.1（本地回环，避免路由问题）
   // - 不同设备通信：可改为实际服务器IP，例如 10.20.23.147
   @State vpnServerIp: string = '127.0.0.1'; // ✅ 修复：同设备应用间通信使用 localhost
-  @State icmpTargetIp: string = '223.5.5.5'; // ICMP测试目标（可改为公网可达IP）
   // ⚠️ 重要：TUN IP是VPN虚拟网络的IP（192.168.100.x段），与物理网络无关
   @State tunIp: string = '192.168.100.2';  // VPN虚拟网络中的客户端IP
   @State prefix: string = '24';
@@ -72,38 +71,6 @@ struct StartVpn {
       showToast('CreateTunnel Fail', BUTTON_SUCCESS_MESSAGE);
       hilog.error(0x0000, 'ZHOUB', '[主页] ❌ CreateTunnel Fail, tunnelFd: %{public}d', tunnelFd);
       this.flag = 'Error';
-    }
-  }
-
-  IcmpEchoTest() {
-    hilog.info(0x0000, 'ZHOUB', '[主页] 📡 开始ICMP Echo测试: %{public}s', this.icmpTargetIp);
-    let result = vpn_client.icmpEchoTest(this.icmpTargetIp, 1000);
-    if (result === 0) {
-      showToast('✅ ICMP Echo成功', BUTTON_SUCCESS_MESSAGE);
-      hilog.info(0x0000, 'ZHOUB', '[主页] ✅ ICMP Echo成功');
-    } else {
-      showToast('❌ ICMP Echo失败/超时', BUTTON_SUCCESS_MESSAGE);
-      hilog.error(0x0000, 'ZHOUB', '[主页] ❌ ICMP Echo失败/超时');
-    }
-  }
-
-  TestProxyServer() {
-    hilog.info(0x0000, 'ZHOUB', '[主页] 🔍 开始测试代理服务器: %{public}s:%{public}d', this.vpnServerIp, 8888);
-    let result = vpn_client.testProxyServer(this.vpnServerIp, 8888);
-    if (result === 0) {
-      showToast('✅ 代理服务器连接正常', BUTTON_SUCCESS_MESSAGE);
-      hilog.info(0x0000, 'ZHOUB', '[主页] ✅ 代理服务器连接正常');
-    } else {
-      let errorMsg = '❌ 代理服务器连接失败';
-      if (result === -4) {
-        errorMsg = '❌ 代理服务器未响应（可能未运行）';
-      } else if (result === -3) {
-        errorMsg = '❌ 无法发送测试包';
-      } else if (result === -2) {
-        errorMsg = '❌ IP地址格式无效';
-      }
-      showToast(errorMsg, BUTTON_SUCCESS_MESSAGE);
-      hilog.error(0x0000, 'ZHOUB', '[主页] ❌ 代理服务器测试失败: code=%{public}d', result);
     }
   }
 
@@ -148,20 +115,6 @@ struct StartVpn {
         }.width('90%');
 
         Row() {
-          Text('icmp target')
-            .fontSize(LABEL_FONT_SIZE)
-            .width('40%')
-            .textAlign(TextAlign.Center)
-            .backgroundColor(0xAFEEEE);
-          TextInput({ text: this.icmpTargetIp })
-            .onChange((value) => {
-              this.icmpTargetIp = value;
-            })
-            .width('60%')
-            .margin(INPUT_MARGIN)
-        }.width('90%');
-
-        Row() {
           Text('tun ip')
             .fontSize(LABEL_FONT_SIZE)
             .width('40%')
@@ -197,21 +150,6 @@ struct StartVpn {
           .id(ComponentId.CREATE_TUNNEL_BUTTON)
           .fontSize(BUTTON_FONT_SIZE)
           .margin(BUTTON_MARGIN);
-        Button('ICMP Echo Test (SOCK_DGRAM)')
-          .onClick(() => {
-            this.IcmpEchoTest();
-          })
-          .width('70%')
-          .fontSize(BUTTON_FONT_SIZE)
-          .margin(BUTTON_MARGIN);
-        Button('🔍 测试代理服务器连接')
-          .onClick(() => {
-            this.TestProxyServer();
-          })
-          .width('70%')
-          .fontSize(BUTTON_FONT_SIZE)
-          .margin(BUTTON_MARGIN)
-          .backgroundColor(0x4CAF50);
         Button($r('app.string.Protect'))
           .onClick(() => {
             this.Protect();

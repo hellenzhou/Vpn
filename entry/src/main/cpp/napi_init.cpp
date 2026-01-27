@@ -154,10 +154,12 @@ void HandleControlMessage(const uint8_t* buffer, int length)
 
             // 解析socket FD (大端字节序)
             int32_t sockFd = (payload[1] << 24) | (payload[2] << 16) | (payload[3] << 8) | payload[4];
-            VPN_CLIENT_LOGI("🛡️ 收到保护转发socket请求: fd=%{public}d", sockFd);
+            VPN_CLIENT_LOGI("🛡️ [流程跟踪-2] 收到保护转发socket请求: fd=%{public}d (已加入保护队列，等待VPN扩展能力调用protect())", sockFd);
 
             // 调用ETS层的保护方法
             ProtectForwardingSocketNative(sockFd);
+            
+            VPN_CLIENT_LOGI("🔍 [流程跟踪-2] socket已加入保护队列: fd=%{public}d (VPN扩展能力应每500ms检查一次)", sockFd);
             break;
         }
 
@@ -254,6 +256,36 @@ void HandleReadTunfd(FdInfo fdInfo)
         }
 
         int readResult = read(fdInfo.tunFd, buffer, sizeof(buffer));
+        
+        // 🔍 流程跟踪：记录从TUN设备读取的数据包
+        if (readResult > 0) {
+            g_lastTunReadTime = time(nullptr);
+            g_packetsReadFromTun.fetch_add(1);
+            
+            // 🚨 环路检测：检查TUN设备收到的数据包，防止代理服务器响应直接进入TUN设备
+            if (readResult >= 20) {
+                uint8_t version = (buffer[0] >> 4) & 0x0F;
+                if (version == 4) {
+                    char srcIP[INET_ADDRSTRLEN], dstIP[INET_ADDRSTRLEN];
+                    snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
+                    snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+                    uint8_t protocol = buffer[9];
+                    
+                    // 🚨 环路检测：TUN设备收到来自/发往代理服务器的数据包
+                    if (protocol == 17 && readResult >= 28) {
+                        uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
+                        uint16_t dstPort = ntohs(*(uint16_t*)&buffer[22]);
+                        
+                        if ((strcmp(srcIP, "127.0.0.1") == 0 && srcPort == 8888) ||
+                            (strcmp(dstIP, "127.0.0.1") == 0 && dstPort == 8888)) {
+                            VPN_CLIENT_LOGE("🚨 环路检测：TUN收到代理服务器数据包 (源=%s:%d 目标=%s:%d) - 可能socket未保护", 
+                                          srcIP, srcPort, dstIP, dstPort);
+                        }
+                    }
+                }
+            }
+        }
+        
         if (readResult <= 0) {
             if (errno != EAGAIN) {
                 NETMANAGER_VPN_LOGE("read tun device error: %{public}d, tunfd: %{public}d", errno, fdInfo.tunFd);
@@ -602,6 +634,22 @@ void HandleReadTunfd(FdInfo fdInfo)
             }
         }
         
+        // 🔍 流程跟踪：记录转发数据包到代理服务器
+        if (readResult >= 20) {
+            uint8_t version = (buffer[0] >> 4) & 0x0F;
+            if (version == 4) {
+                char srcIP[INET_ADDRSTRLEN], dstIP[INET_ADDRSTRLEN];
+                snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
+                snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+                uint8_t protocol = buffer[9];
+                
+                if (packetCount <= 10 || packetCount % 50 == 0) {
+                    VPN_CLIENT_LOGI("🔍 [流程跟踪] TUN->代理服务器: %s -> %s (协议=%d, %d字节)", 
+                                  srcIP, dstIP, protocol, readResult);
+                }
+            }
+        }
+        
         int sendResult = sendto(fdInfo.tunnelFd, buffer, readResult, 0,
             reinterpret_cast<struct sockaddr*>(&fdInfo.serverAddr), sizeof(fdInfo.serverAddr));
         if (sendResult <= 0) {
@@ -657,10 +705,9 @@ void HandleReadTunfd(FdInfo fdInfo)
         g_packetsSent.fetch_add(1);
         g_packetsForwarded.fetch_add(1);  // 统计成功转发的数据包
         
-        // 🔥 精简日志：只在每10个数据包或前5个数据包打印成功信息
-        if (packetCount <= 5 || packetCount % 10 == 0) {
-            VPN_CLIENT_LOGI("✅ 转发成功 #%{public}d: %{public}d字节",
-                         packetCount, sendResult);
+        // 🔍 流程跟踪：记录成功发送
+        if (packetCount <= 10 || packetCount % 50 == 0) {
+            VPN_CLIENT_LOGI("🔍 [流程跟踪] 数据包已发送到代理服务器: %d字节", sendResult);
         }
         
         // 🔥 精简日志：每50个数据包输出一次统计信息
@@ -975,78 +1022,38 @@ void HandleTcpReceived(FdInfo fdInfo)
                         HandleControlMessage(buffer, static_cast<int>(length));
                         continue;  // 控制消息不写入TUN
                     }
-                    if (srcPort == 53) {
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                     "📥 收到DNS响应: %{public}s:%{public}d -> %{public}s:%{public}d (UDP, %{public}d字节) <- VPN服务器",
-                                     srcIP, srcPort, dstIP, dstPort, length);
-                    } else {
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                     "📥 收到UDP响应: %{public}s:%{public}d -> %{public}s:%{public}d (%{public}d字节) <- VPN服务器",
-                                     srcIP, srcPort, dstIP, dstPort, length);
+                    // 简化：只在每100个响应或前5个时记录
+                    if (responseCount <= 5 || responseCount % 100 == 0) {
+                        if (srcPort == 53) {
+                            VPN_CLIENT_LOGI("📥 收到DNS响应: %s:%d -> %s:%d (%d字节)", 
+                                         srcIP, srcPort, dstIP, dstPort, length);
+                        } else {
+                            VPN_CLIENT_LOGI("📥 收到UDP响应: %s:%d -> %s:%d (%d字节)", 
+                                         srcIP, srcPort, dstIP, dstPort, length);
+                        }
                     }
                 } else if (protocol == 6 && length >= 40) {  // TCP
                     protocolName = "TCP";
                     srcPort = (buffer[20] << 8) | buffer[21];
                     dstPort = (buffer[22] << 8) | buffer[23];
-
-                    // 🔍 关键诊断：记录TCP标志位/seq/ack，判断握手/数据是否正常
-                    uint8_t ipHeaderLen = (buffer[0] & 0x0F) * 4;
-                    if (length >= ipHeaderLen + 20) {
-                        uint8_t flags = buffer[ipHeaderLen + 13];
-                        uint32_t seq = (static_cast<uint32_t>(buffer[ipHeaderLen + 4]) << 24) |
-                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 5]) << 16) |
-                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 6]) << 8) |
-                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 7]));
-                        uint32_t ack = (static_cast<uint32_t>(buffer[ipHeaderLen + 8]) << 24) |
-                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 9]) << 16) |
-                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 10]) << 8) |
-                                       (static_cast<uint32_t>(buffer[ipHeaderLen + 11]));
-                        
-                        // 解析TCP标志位为可读字符串
-                        char flagsStr[64] = {0};
-                        int flagPos = 0;
-                        if (flags & 0x02) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "SYN|");
-                        if (flags & 0x10) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "ACK|");
-                        if (flags & 0x01) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "FIN|");
-                        if (flags & 0x04) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "RST|");
-                        if (flags & 0x08) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "PSH|");
-                        if (flags & 0x20) flagPos += snprintf(flagsStr + flagPos, sizeof(flagsStr) - flagPos, "URG|");
-                        if (flagPos > 0) flagsStr[flagPos - 1] = '\0';  // 移除最后的'|'
-                        else snprintf(flagsStr, sizeof(flagsStr), "NONE");
-                        
-                        // 计算payload大小
-                        uint8_t tcpHeaderLen = ((buffer[ipHeaderLen + 12] >> 4) & 0x0F) * 4;
-                        int tcpPayloadSize = length - ipHeaderLen - tcpHeaderLen;
-                        if (tcpPayloadSize < 0) tcpPayloadSize = 0;
-                        
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                     "🔍🔍🔍 [VPN客户端-收到TCP] %{public}s:%{public}d -> %{public}s:%{public}d",
-                                     srcIP, srcPort, dstIP, dstPort);
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                     "  ├─ 标志: [%{public}s] (0x%{public}02x)", flagsStr, flags);
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                     "  ├─ seq=%{public}u ack=%{public}u", seq, ack);
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                     "  ├─ payload: %{public}d字节 (总长度: %{public}d字节)", tcpPayloadSize, length);
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB",
-                                     "  └─ 即将写入TUN设备");
-                    }
                     const char* serviceType = "";
-                    if (srcPort == 80) serviceType = " [HTTP响应]";
-                    else if (srcPort == 443) serviceType = " [HTTPS响应]";
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📥 收到TCP响应: %{public}s:%{public}d -> %{public}s:%{public}d%{public}s (%{public}d字节) <- VPN服务器",
-                                 srcIP, srcPort, dstIP, dstPort, serviceType, length);
+                    if (srcPort == 80) serviceType = " [HTTP]";
+                    else if (srcPort == 443) serviceType = " [HTTPS]";
+                    // 简化：只在每100个响应或前5个时记录
+                    if (responseCount <= 5 || responseCount % 100 == 0) {
+                        VPN_CLIENT_LOGI("📥 收到TCP响应: %s:%d -> %s:%d%s (%d字节)", 
+                                     srcIP, srcPort, dstIP, dstPort, serviceType, length);
+                    }
                 } else if (protocol == 1) {  // ICMP
                     protocolName = "ICMP";
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📥 收到ICMP响应: %{public}s -> %{public}s (%{public}d字节) <- VPN服务器",
-                                 srcIP, dstIP, length);
+                    if (responseCount <= 5 || responseCount % 100 == 0) {
+                        VPN_CLIENT_LOGI("📥 收到ICMP响应: %s -> %s (%d字节)", srcIP, dstIP, length);
+                    }
                 } else {
-                    snprintf(srcIP, sizeof(srcIP), "协议%d", protocol);
-                    OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                                 "📥 收到响应: 协议=%{public}d %{public}s -> %{public}s (%{public}d字节) <- VPN服务器",
-                                 protocol, srcIP, dstIP, length);
+                    protocolName = "其他";
+                    if (responseCount <= 5 || responseCount % 100 == 0) {
+                        VPN_CLIENT_LOGI("📥 收到响应: 协议=%d %s -> %s (%d字节)", protocol, srcIP, dstIP, length);
+                    }
                 }
             } else if (version == 6 && length >= 40) {  // IPv6
                 uint8_t nextHeader = buffer[6];
@@ -1073,8 +1080,11 @@ void HandleTcpReceived(FdInfo fdInfo)
             }
         }
         
-        NETMANAGER_VPN_LOGI("📥 RESPONSE #%d: Received %{public}d bytes from server (total responses: %{public}d)",
-                           responseCount, length, g_responsesReceived.load());
+        // 简化：只在每100个响应或前5个时记录统计
+        if (responseCount <= 5 || responseCount % 100 == 0) {
+            VPN_CLIENT_LOGI("📥 响应 #%d: %d字节 (总计: %d)", 
+                          responseCount, length, g_responsesReceived.load());
+        }
 
         // 接收到udp server的数据，写入到虚拟网卡中
         if (fdInfo.tunFd < 0) {
@@ -1084,28 +1094,54 @@ void HandleTcpReceived(FdInfo fdInfo)
             break;
         }
 
-        // 🔥 ZHOUB日志：代理成功后给TUN设备（包含数据前64字节的十六进制）
-        char dataHex[129] = {0};  // 64字节 * 2 + 1
-        int hexLen = length < 64 ? length : 64;
-        for (int i = 0; i < hexLen; i++) {
-            snprintf(dataHex + i * 2, 3, "%02x", buffer[i]);
+        // 🚨 环路检测：检查响应包的源IP和目标IP，防止数据环路
+        if (length >= 20) {
+            uint8_t version = (buffer[0] >> 4) & 0x0F;
+            if (version == 4) {
+                char srcIP[INET_ADDRSTRLEN], dstIP[INET_ADDRSTRLEN];
+                snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
+                snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+                uint8_t protocol = buffer[9];
+                
+                // 🚨 环路检测：检查响应包IP地址是否正确
+                if (protocol == 17 && length >= 28) {
+                    uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
+                    uint16_t dstPort = ntohs(*(uint16_t*)&buffer[22]);
+                    
+                    // 检测源IP或目标IP是代理服务器IP（127.0.0.1:8888）
+                    if ((strcmp(srcIP, "127.0.0.1") == 0 && srcPort == 8888) ||
+                        (strcmp(dstIP, "127.0.0.1") == 0 && dstPort == 8888)) {
+                        VPN_CLIENT_LOGE("🚨 环路检测：响应包IP错误 (源=%s:%d 目标=%s:%d) - 已丢弃，避免环路", 
+                                      srcIP, srcPort, dstIP, dstPort);
+                        continue;
+                    }
+                }
+            }
         }
         
-        OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                     "[代理→TUN] 源IP:%{public}s 目的IP:%{public}s 源端口:%{public}d 目的端口:%{public}d 协议:%{public}s 大小:%{public}d字节 数据:%{public}s",
-                     srcIP, dstIP, srcPort, dstPort, protocolName, length, dataHex);
-
+        // 🔍 流程跟踪：记录写入TUN设备（减少日志频率）
+        if (responseCount <= 5 || responseCount % 100 == 0) {
+            if (length >= 20) {
+                uint8_t version = (buffer[0] >> 4) & 0x0F;
+                if (version == 4) {
+                    char srcIP[INET_ADDRSTRLEN], dstIP[INET_ADDRSTRLEN];
+                    snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
+                    snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+                    uint8_t protocol = buffer[9];
+                    VPN_CLIENT_LOGI("🔍 代理服务器->TUN: %s -> %s (协议=%d, %d字节)", 
+                                  srcIP, dstIP, protocol, length);
+                }
+            }
+        }
+        
         int ret = write(fdInfo.tunFd, buffer, length);
         if (ret <= 0) {
-            NETMANAGER_VPN_LOGE("error Write To Tunfd, errno: %{public}d", errno);
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                         "❌ 写入TUN设备失败: 响应 #%{public}d (%{public}d字节), errno=%{public}d",
-                         responseCount, length, errno);
+            VPN_CLIENT_LOGE("写入TUN失败: 响应#%d (%d字节), errno=%d", responseCount, length, errno);
         } else {
-            NETMANAGER_VPN_LOGI("✅ Wrote %{public}d bytes to TUN device", ret);
-            OH_LOG_Print(LOG_APP, LOG_INFO, 0x0000, "ZHOUB", 
-                         "✅ 写入TUN成功: 响应 #%{public}d 已写入 %{public}d 字节到TUN设备",
-                         responseCount, ret);
+            // 简化：只在每100个响应或前5个时记录成功
+            if (responseCount <= 5 || responseCount % 100 == 0) {
+                VPN_CLIENT_LOGI("✅ 写入TUN成功: 响应#%d (%d字节)", responseCount, ret);
+            }
         }
     }
 
@@ -1517,114 +1553,6 @@ static napi_value GetNextSocketToProtect(napi_env env, napi_callback_info info)
 }
 
 // 🔥 新增：测试代理服务器连接
-static napi_value TestProxyServer(napi_env env, napi_callback_info info)
-{
-    VPN_CLIENT_LOGI("========== TestProxyServer() 开始执行 ==========");
-    
-    size_t argc = 2;
-    napi_value args[2] = { nullptr };
-    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-    
-    // 获取IP地址和端口参数
-    std::string serverIp = "127.0.0.1";
-    int32_t port = 8888;
-    
-    if (argc >= 1) {
-        serverIp = GetStringFromValueUtf8(env, args[0]);
-    }
-    if (argc >= 2) {
-        napi_get_value_int32(env, args[1], &port);
-    }
-    
-    VPN_CLIENT_LOGI("🔍 测试代理服务器: %{public}s:%{public}d", serverIp.c_str(), port);
-    
-    // 创建UDP socket
-    int testSock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (testSock < 0) {
-        VPN_CLIENT_LOGE("❌ 创建测试socket失败: %{public}s", strerror(errno));
-        napi_value retValue;
-        napi_create_int32(env, -1, &retValue);
-        return retValue;
-    }
-    
-    // 设置接收超时
-    struct timeval timeout = {2, 0};  // 2秒超时
-    setsockopt(testSock, SOL_SOCKET, SO_RCVTIMEO, 
-               reinterpret_cast<const char*>(&timeout), sizeof(struct timeval));
-    
-    // 配置服务器地址
-    struct sockaddr_in serverAddr {};
-    memset(&serverAddr, 0, sizeof(serverAddr));
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(static_cast<uint16_t>(port));
-    
-    if (inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr) <= 0) {
-        VPN_CLIENT_LOGE("❌ IP地址格式无效: %{public}s", serverIp.c_str());
-        close(testSock);
-        napi_value retValue;
-        napi_create_int32(env, -2, &retValue);
-        return retValue;
-    }
-    
-    // 发送ping测试包
-    const char* pingMsg = "ping";
-    ssize_t sent = sendto(testSock, pingMsg, strlen(pingMsg), 0,
-                         reinterpret_cast<struct sockaddr*>(&serverAddr), sizeof(serverAddr));
-    
-    if (sent < 0) {
-        int errno_save = errno;
-        VPN_CLIENT_LOGE("❌ 发送测试包失败: errno=%{public}d (%{public}s)", errno_save, strerror(errno_save));
-        close(testSock);
-        napi_value retValue;
-        napi_create_int32(env, -3, &retValue);
-        return retValue;
-    }
-    
-    VPN_CLIENT_LOGI("✅ 测试包已发送 (%{public}zd字节)", sent);
-    
-    // 等待响应
-    char buffer[1024] = {0};
-    struct sockaddr_in fromAddr {};
-    socklen_t fromLen = sizeof(fromAddr);
-    
-    ssize_t received = recvfrom(testSock, buffer, sizeof(buffer) - 1, 0,
-                               reinterpret_cast<struct sockaddr*>(&fromAddr), &fromLen);
-    
-    close(testSock);
-    
-    if (received < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT) {
-            VPN_CLIENT_LOGE("❌ 接收响应超时：代理服务器可能未运行或未响应");
-            napi_value retValue;
-            napi_create_int32(env, -4, &retValue);
-            return retValue;
-        } else {
-            VPN_CLIENT_LOGE("❌ 接收响应失败: errno=%{public}d (%{public}s)", errno, strerror(errno));
-            napi_value retValue;
-            napi_create_int32(env, -5, &retValue);
-            return retValue;
-        }
-    }
-    
-    buffer[received] = '\0';
-    
-    // 检查响应
-    if (received == 4 && strncmp(buffer, "pong", 4) == 0) {
-        char fromIp[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &fromAddr.sin_addr, fromIp, sizeof(fromIp));
-        VPN_CLIENT_LOGI("✅ 代理服务器响应正常: 收到'pong'来自 %{public}s:%{public}d", 
-                       fromIp, ntohs(fromAddr.sin_port));
-        napi_value retValue;
-        napi_create_int32(env, 0, &retValue);
-        return retValue;
-    } else {
-        VPN_CLIENT_LOGE("❌ 收到异常响应: %{public}s (%{public}zd字节)", buffer, received);
-        napi_value retValue;
-        napi_create_int32(env, -6, &retValue);
-        return retValue;
-    }
-}
- 
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
@@ -1635,7 +1563,6 @@ static napi_value Init(napi_env env, napi_value exports)
         {"icmpEchoTest", nullptr, IcmpEchoTest, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"protectForwardingSocket", nullptr, ProtectForwardingSocket, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getNextSocketToProtect", nullptr, GetNextSocketToProtect, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"testProxyServer", nullptr, TestProxyServer, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

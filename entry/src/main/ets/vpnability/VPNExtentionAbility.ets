@@ -58,10 +58,12 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
     }
 
     try {
+      hilog.info(0x0000, 'ZHOUB', '🔍 [流程跟踪-4] 调用VpnConnection.protect(): fd=%{public}d', sockFd);
       this.vpnConnection.protect(sockFd).then(() => {
-        // 保护成功，静默处理
+        hilog.info(0x0000, 'ZHOUB', '✅ [流程跟踪-4] socket保护成功: fd=%{public}d (socket已绕过VPN路由表)', sockFd);
       }).catch((err: Error) => {
-        hilog.error(0x0000, 'ZHOUB', '[扩展能力] 转发socket保护失败 fd=%{public}d: %{public}s', sockFd, JSON.stringify(err));
+        hilog.error(0x0000, 'ZHOUB', '❌ [流程跟踪-4] 转发socket保护失败 fd=%{public}d: %{public}s', sockFd, JSON.stringify(err));
+        hilog.error(0x0000, 'ZHOUB', '🚨🚨🚨 如果protect()失败，socket流量会被VPN路由表捕获，形成环路！');
       });
       return true;
     } catch (error) {
@@ -297,9 +299,12 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       try {
         const sockFd: number = vpn_client.getNextSocketToProtect();
         if (sockFd >= 0) {
+          hilog.info(0x0000, 'ZHOUB', '🔍 [流程跟踪-3] 从保护队列获取socket: fd=%{public}d, 准备调用protect()', sockFd);
           const success: boolean = this.protectForwardingSocket(sockFd);
-          if (!success) {
-            hilog.error(0x0000, 'ZHOUB', '[扩展能力] socket保护失败 fd=%{public}d', sockFd);
+          if (success) {
+            hilog.info(0x0000, 'ZHOUB', '✅ [流程跟踪-3] socket保护请求已发送: fd=%{public}d (等待protect() Promise完成)', sockFd);
+          } else {
+            hilog.error(0x0000, 'ZHOUB', '❌ [流程跟踪-3] socket保护失败: fd=%{public}d', sockFd);
           }
         }
       } catch (error) {
