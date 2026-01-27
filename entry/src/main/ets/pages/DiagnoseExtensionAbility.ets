@@ -27,8 +27,6 @@ export class DiagnoseExtensionAbility {
    * 执行完整的诊断流程
    */
   static async diagnose(): Promise<void> {
-    hilog.info(0x0000, 'ZHOUB', '[诊断] ========== 开始扩展能力诊断 ==========');
-    
     // 1. 检查配置
     this.checkConfiguration();
     
@@ -40,40 +38,30 @@ export class DiagnoseExtensionAbility {
     
     // 4. 尝试启动扩展能力
     await this.tryStartExtensionAbility();
-
-    hilog.info(0x0000, 'ZHOUB', '[诊断] ========== 诊断完成 ==========');
   }
   
   /**
    * 检查module.json5配置
    */
   private static checkConfiguration(): void {
-    hilog.info(0x0000, 'ZHOUB', '[诊断] 📋 检查配置...');
-
   }
   
   /**
    * 检查权限
    */
   private static checkPermissions(): void {
-    hilog.info(0x0000, 'ZHOUB', '[诊断] 🔐 检查权限...');
-
   }
   
   /**
    * 检查文件
    */
   private static checkFiles(): void {
-    hilog.info(0x0000, 'ZHOUB', '[诊断] 📁 检查文件...');
-
   }
   
   /**
    * 尝试启动扩展能力
    */
   private static async tryStartExtensionAbility(): Promise<void> {
-    hilog.info(0x0000, 'ZHOUB', '[诊断] 🚀 尝试启动扩展能力...');
-    
     let want: Want = {
       deviceId: '',
       bundleName: 'com.samples.vpncontrol_case',
@@ -81,22 +69,10 @@ export class DiagnoseExtensionAbility {
     };
 
     try {
-
-      const startTime = Date.now();
-      
       await vpnExtension.startVpnExtensionAbility(want);
-      
-      const elapsed = Date.now() - startTime;
-      hilog.info(0x0000, 'ZHOUB', '[诊断] ✅ startVpnExtensionAbility() 成功 (耗时: %{public}dms)', elapsed);
-
-      setTimeout(() => {
-        hilog.info(0x0000, 'ZHOUB', '[诊断] ⏰ 等待5秒后检查扩展能力日志...');
-
-      }, 5000);
-      
+      hilog.info(0x0000, 'ZHOUB', '[诊断] 启动扩展能力成功');
     } catch (error) {
-
-      hilog.error(0x0000, 'ZHOUB', '[诊断] ❌ 错误消息: %{public}s', (error as Error)?.message ?? '');
+      hilog.error(0x0000, 'ZHOUB', '[诊断] 启动扩展能力失败: %{public}s', (error as Error)?.message ?? '');
     }
   }
 }

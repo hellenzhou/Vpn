@@ -116,35 +116,16 @@ struct Index {
         // 🔥 诊断VPN状态和数据转发
         Button('🔍 诊断VPN状态')
           .onClick(() => {
-            hilog.info(0x0000, 'ZHOUB', '[诊断] ========== VPN状态诊断 ==========');
-            hilog.info(0x0000, 'ZHOUB', '[诊断] 📋 检查VPN状态...');
-            
-            // 检查VPN ID
             try {
               let vpnId: string = this.getVpnIdTest.getVpnId();
-              hilog.info(0x0000, 'ZHOUB', '[诊断] VPN ID: %{public}s', vpnId || '未获取到');
               if (vpnId) {
-                hilog.info(0x0000, 'ZHOUB', '[诊断] ✅ VPN连接已创建');
+                hilog.info(0x0000, 'ZHOUB', '[诊断] VPN连接已创建 VPN ID=%{public}s', vpnId);
               } else {
-                hilog.error(0x0000, 'ZHOUB', '[诊断] ❌ VPN连接未创建或获取失败');
+                hilog.error(0x0000, 'ZHOUB', '[诊断] VPN连接未创建或获取失败');
               }
             } catch (err) {
-              hilog.error(0x0000, 'ZHOUB', '[诊断] ❌ 获取VPN ID失败: %{public}s', JSON.stringify(err) ?? '');
+              hilog.error(0x0000, 'ZHOUB', '[诊断] 获取VPN ID失败: %{public}s', JSON.stringify(err) ?? '');
             }
-            
-            hilog.info(0x0000, 'ZHOUB', '[诊断] 📝 请查看原生代码日志（napi_init.cpp）:');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   - 搜索 "ZHOUB" 查看数据包转发日志');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   - 搜索 "从TUN读取" 查看是否读取到数据包');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   - 搜索 "转发成功" 查看是否成功转发');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   - 搜索 "转发失败" 查看转发错误');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   - 搜索 "转发统计" 查看转发统计信息');
-            hilog.info(0x0000, 'ZHOUB', '[诊断] ⚠️ 如果看不到原生代码日志，可能原因：');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   1. 数据转发线程未启动（检查startVpn是否被调用）');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   2. TUN设备未创建（检查VPN连接是否创建成功）');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   3. UDP隧道未创建（检查CreateTunnel是否成功）');
-            hilog.info(0x0000, 'ZHOUB', '[诊断]   4. 日志被过滤（检查Hilog过滤条件）');
-            hilog.info(0x0000, 'ZHOUB', '[诊断] ====================================');
-            
             showToast('诊断完成，请查看Hilog日志', TOAST_DURATION);
           })
           .width('70%')
@@ -155,43 +136,16 @@ struct Index {
         // 🔥 测试 Extension Ability onCreate()
         Button('🧪 启动VPN Extension Ability')
           .onClick(() => {
-            hilog.info(0x0000, 'ZHOUB', '[主页] ========== 准备启动 VPN Extension Ability ==========');
-            hilog.info(0x0000, 'ZHOUB', '[主页] 🔥 按钮点击事件触发');
-            
-            // 🔥 添加详细的配置验证
-            hilog.info(0x0000, 'ZHOUB', '[主页] 📋 配置验证:');
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - bundleName: com.samples.vpncontrol_case');
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - abilityName: MyVpnExtAbility');
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - 文件路径: ./ets/vpnability/VPNExtentionAbility.ets');
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - 扩展能力类型: vpn');
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - exported: true');
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - 必需权限: ohos.permission.MANAGE_VPN');
-            
             let want: Want = {
               deviceId: '',
               bundleName: 'com.samples.vpncontrol_case',
               abilityName: 'MyVpnExtAbility',
             };
             
-            hilog.info(0x0000, 'ZHOUB', '[主页] 📋 Want配置:');
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - bundleName: %{public}s', want.bundleName);
-            hilog.info(0x0000, 'ZHOUB', '[主页]   - abilityName: %{public}s', want.abilityName);
-            hilog.info(0x0000, 'ZHOUB', '[主页] 📞 调用 vpnExtension.startVpnExtensionAbility()...');
-            hilog.info(0x0000, 'ZHOUB', '[主页] ⏰ 开始时间: %{public}s', new Date().toISOString());
-            
-            // 🔥 添加错误捕获和详细日志
             try {
-            
-            // 🔥 添加超时检查
-            let startTime = Date.now();
             vpnExtension.startVpnExtensionAbility(want)
               .then(() => {
-                let elapsed = Date.now() - startTime;
-                hilog.info(0x0000, 'ZHOUB', '[主页] ✅ startVpnExtensionAbility() Promise resolved (耗时: %{public}dms)', elapsed);
-                hilog.info(0x0000, 'ZHOUB', '[主页] ✅ VPN Extension Ability 启动请求已发送！');
-                hilog.info(0x0000, 'ZHOUB', '[主页] ⚠️ 注意：Promise resolved 不代表扩展能力已启动，只是请求已发送');
-                hilog.info(0x0000, 'ZHOUB', '[主页] 🔍 请查看 Hilog 中的 [扩展能力] 日志！');
-                hilog.info(0x0000, 'ZHOUB', '[主页] ⏰ 注意：扩展能力的onCreate()和onRequest()可能稍后才会被调用');
+                hilog.info(0x0000, 'ZHOUB', '[主页] VPN Extension Ability 启动请求已发送');
                 hilog.info(0x0000, 'ZHOUB', '[主页] ⏰ 如果看不到[扩展能力]日志，请等待几秒后再次查看');
                 hilog.info(0x0000, 'ZHOUB', '[主页] 📋 预期日志顺序：');
                 hilog.info(0x0000, 'ZHOUB', '[主页]   1. [扩展能力] 🔥🔥🔥 MyVpnExtAbility 类已加载');
