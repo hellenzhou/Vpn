@@ -40,7 +40,7 @@ export class DiagnoseExtensionAbility {
     
     // 4. 尝试启动扩展能力
     await this.tryStartExtensionAbility();
-    
+
     hilog.info(0x0000, 'ZHOUB', '[诊断] ========== 诊断完成 ==========');
   }
   
@@ -79,13 +79,9 @@ export class DiagnoseExtensionAbility {
       bundleName: 'com.samples.vpncontrol_case',
       abilityName: 'MyVpnExtAbility',
     };
-    
 
-    hilog.info(0x0000, 'ZHOUB', '[诊断]   - bundleName: %{public}s', want.bundleName);
-    hilog.info(0x0000, 'ZHOUB', '[诊断]   - abilityName: %{public}s', want.abilityName);
-    
     try {
-      hilog.info(0x0000, 'ZHOUB', '[诊断] 📞 调用 vpnExtension.startVpnExtensionAbility()...');
+
       const startTime = Date.now();
       
       await vpnExtension.startVpnExtensionAbility(want);
