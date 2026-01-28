@@ -187,20 +187,39 @@ void HandleReadTunfd(FdInfo fdInfo)
                     snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
                     snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
                     uint8_t protocol = buffer[9];
+                    uint8_t ihlBytes = static_cast<uint8_t>((buffer[0] & 0x0F) * 4);
+                    if (ihlBytes < 20) {
+                        ihlBytes = 20; // safety fallback
+                    }
                     
                     // ⚠️ 源IP异常检测：TUN读取到非虚拟IP源地址
                     if (strcmp(srcIP, kExpectedTunIpv4) != 0) {
                         int mismatchCount = g_tunSrcMismatchCount.fetch_add(1) + 1;
                         if (mismatchCount <= 5 || (mismatchCount % 50) == 0) {
-                            VPN_CLIENT_LOGE("⚠️ TUN源IP异常: 源=%s 目标=%s 协议=%u (期望源IP=%s) - 可能绕过/旧连接",
-                                          srcIP, dstIP, protocol, kExpectedTunIpv4);
+                            // 尝试补充端口，便于定位是哪类流量触发
+                            uint16_t srcPort = 0;
+                            uint16_t dstPort = 0;
+                            bool hasPorts = false;
+                            if ((protocol == 6 || protocol == 17) && readResult >= (ihlBytes + 4)) {
+                                srcPort = ntohs(*reinterpret_cast<uint16_t*>(&buffer[ihlBytes]));
+                                dstPort = ntohs(*reinterpret_cast<uint16_t*>(&buffer[ihlBytes + 2]));
+                                hasPorts = true;
+                            }
+
+                            if (hasPorts) {
+                                VPN_CLIENT_LOGE("⚠️ TUN源IP异常: %s:%u -> %s:%u 协议=%u len=%d (期望源IP=%s) - 可能绕过/旧连接",
+                                              srcIP, srcPort, dstIP, dstPort, protocol, readResult, kExpectedTunIpv4);
+                            } else {
+                                VPN_CLIENT_LOGE("⚠️ TUN源IP异常: 源=%s 目标=%s 协议=%u len=%d (期望源IP=%s) - 可能绕过/旧连接",
+                                              srcIP, dstIP, protocol, readResult, kExpectedTunIpv4);
+                            }
                         }
                     }
 
                     // 🚨 环路检测：TUN设备收到来自/发往代理服务器的数据包
-                    if (protocol == 17 && readResult >= 28) {
-                        uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
-                        uint16_t dstPort = ntohs(*(uint16_t*)&buffer[22]);
+                    if (protocol == 17 && readResult >= (ihlBytes + 8)) {
+                        uint16_t srcPort = ntohs(*reinterpret_cast<uint16_t*>(&buffer[ihlBytes]));
+                        uint16_t dstPort = ntohs(*reinterpret_cast<uint16_t*>(&buffer[ihlBytes + 2]));
                         
                         if ((strcmp(srcIP, "127.0.0.1") == 0 && srcPort == 8888) ||
                             (strcmp(dstIP, "127.0.0.1") == 0 && dstPort == 8888)) {
