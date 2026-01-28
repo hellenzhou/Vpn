@@ -85,6 +85,10 @@ static std::atomic<int> g_trafficCheckInterval{0};  // 流量检查间隔计数�
 static std::atomic<int> g_tcpOutLogCount{0};  // TCP出站日志计数（限量）
 static std::atomic<time_t> g_lastTunReadTime{0};  // 最后一次从TUN读取数据包的时间
 static std::atomic<time_t> g_lastStateCheckTime{0};  // 最后一次状态检查的时间
+static std::atomic<int> g_tunSrcMismatchCount{0};  // TUN读取到非虚拟源IP的计数
+
+// 与 ETS 中的 tunIp 保持一致
+static constexpr const char* kExpectedTunIpv4 = "192.168.100.2";
 
 
 static constexpr const int MAX_STRING_LENGTH = 1024;
@@ -161,8 +165,9 @@ void HandleReadTunfd(FdInfo fdInfo)
             time_t vpnUptime = now - g_vpnStartTime.load();
             
             VPN_CLIENT_LOGI("[VPN客户端] 💓 TUN读取线程心跳: VPN运行%{public}lld秒", (long long)vpnUptime);
-            VPN_CLIENT_LOGI("[VPN客户端] 💓 统计: TUN读取%{public}d包, TCP包%{public}d, 已发送%{public}d, 已收到响应%{public}d", 
-                          totalPackets, tcpPackets, packetsSent, responsesReceived);
+            int tunSrcMismatch = g_tunSrcMismatchCount.load();
+            VPN_CLIENT_LOGI("[VPN客户端] 💓 统计: TUN读取%{public}d包, TCP包%{public}d, 已发送%{public}d, 已收到响应%{public}d, 源IP异常%{public}d", 
+                          totalPackets, tcpPackets, packetsSent, responsesReceived, tunSrcMismatch);
             
             // 🔥 简化：只在心跳中检查TUN设备是否收到数据包，无响应检测在主循环中统一处理
             if (totalPackets == 0 && vpnUptime > 10) {
@@ -174,9 +179,6 @@ void HandleReadTunfd(FdInfo fdInfo)
         
         // 🔍 流程跟踪：记录从TUN设备读取的数据包
         if (readResult > 0) {
-            g_lastTunReadTime = time(nullptr);
-            g_packetsReadFromTun.fetch_add(1);
-            
             // 🚨 环路检测：检查TUN设备收到的数据包，防止代理服务器响应直接进入TUN设备
             if (readResult >= 20) {
                 uint8_t version = (buffer[0] >> 4) & 0x0F;
@@ -186,6 +188,15 @@ void HandleReadTunfd(FdInfo fdInfo)
                     snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
                     uint8_t protocol = buffer[9];
                     
+                    // ⚠️ 源IP异常检测：TUN读取到非虚拟IP源地址
+                    if (strcmp(srcIP, kExpectedTunIpv4) != 0) {
+                        int mismatchCount = g_tunSrcMismatchCount.fetch_add(1) + 1;
+                        if (mismatchCount <= 5 || (mismatchCount % 50) == 0) {
+                            VPN_CLIENT_LOGE("⚠️ TUN源IP异常: 源=%s 目标=%s 协议=%u (期望源IP=%s) - 可能绕过/旧连接",
+                                          srcIP, dstIP, protocol, kExpectedTunIpv4);
+                        }
+                    }
+
                     // 🚨 环路检测：TUN设备收到来自/发往代理服务器的数据包
                     if (protocol == 17 && readResult >= 28) {
                         uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
@@ -287,6 +298,12 @@ void HandleReadTunfd(FdInfo fdInfo)
                 char srcIP[16], dstIP[16];
                 snprintf(srcIP, sizeof(srcIP), "%d.%d.%d.%d", buffer[12], buffer[13], buffer[14], buffer[15]);
                 snprintf(dstIP, sizeof(dstIP), "%d.%d.%d.%d", buffer[16], buffer[17], buffer[18], buffer[19]);
+
+                // 非虚拟源IP进入TUN时，直接丢弃以避免服务端误判和RST
+                if (strcmp(srcIP, kExpectedTunIpv4) != 0) {
+                    g_packetsDropped.fetch_add(1);
+                    continue;
+                }
                 
                 if (protocol == 6) {  // TCP
                     g_ipv4TcpPackets.fetch_add(1);
@@ -690,7 +707,7 @@ void HandleReadTunfd(FdInfo fdInfo)
                          fdInfo.tunnelFd, fdInfo.tunnelFd >= 0 ? "是" : "否");
             
             // 转发统计
-            int totalProcessed = g_packetsForwarded.load() + g_packetsSendFailed.load();
+            int totalProcessed = g_packetsForwarded.load() + g_packetsSendFailed.load() + g_packetsDropped.load();
             double forwardSuccessRate = 0.0;
             if (g_packetsReadFromTun.load() > 0) {
                 forwardSuccessRate = (double)g_packetsForwarded.load() * 100.0 / (double)g_packetsReadFromTun.load();

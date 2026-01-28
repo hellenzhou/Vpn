@@ -191,8 +191,9 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
       ) {
         // 配置 IPv4 和 IPv6 地址
         this.addresses = [
-          new AddressWithPrefix(new Address(tunIp, 1), 24),   // IPv4地址
-          new AddressWithPrefix(new Address('::1', 2), 128)   // IPv6地址
+          new AddressWithPrefix(new Address(tunIp, 1), 24),    // IPv4地址
+          // IPv6 使用 ULA 网段，避免回环地址导致 IPv6 流量无法进入 TUN
+          new AddressWithPrefix(new Address('fd00::2', 2), 64) // IPv6地址
         ];
         this.mtu = 1400;
         // 🔥🔥🔥 关键修复：使用空DNS数组强制DNS查询也通过VPN隧道
@@ -228,7 +229,7 @@ export default class MyVpnExtAbility extends VpnExtensionAbility {
               prefixLength: 0
             },
             gateway: {
-              address: '::1',
+              address: 'fd00::1',
               family: 2,  // IPv6
               port: 0
             },
