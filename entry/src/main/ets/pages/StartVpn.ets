@@ -163,6 +163,8 @@ struct StartVpn {
         Button('🚀 一键启动VPN (创建隧道→保护隧道→开启VPN)')
           .onClick(() => {
             try {
+              hilog.info(0x0000, 'ZHOUB', '[主页] 📞 步骤1: 调用 vpnExtension.startVpnExtensionAbility()...');
+              // [EndExclude start_vpn_extension_ability]
               vpnExtension.startVpnExtensionAbility(want)
                 .then(() => {
                   hilog.info(0x0000, 'ZHOUB', '[主页] VPN扩展能力启动成功');

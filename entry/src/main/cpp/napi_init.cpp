@@ -118,91 +118,6 @@ std::string GetStringFromValueUtf8(napi_env env, napi_value value)
     return result;
 }
 
-// 前置声明：C++ 在函数定义前使用时必须先声明
-void ProtectForwardingSocketNative(int sockFd);
-
-// 🎯 处理控制消息
-void HandleControlMessage(const uint8_t* buffer, int length)
-{
-    VPN_CLIENT_LOGI("🎯 处理控制消息: 长度=%{public}d字节", length);
-
-    // 控制消息格式：IP头(20字节) + UDP头(8字节) + Payload
-    if (length < 28) {
-        VPN_CLIENT_LOGE("❌ 控制消息太短: %{public}d字节 (最小28字节)", length);
-        return;
-    }
-
-    // 提取payload：跳过IP头(20字节)和UDP头(8字节)
-    const uint8_t* payload = buffer + 20 + 8;
-    int payloadLength = length - 20 - 8;
-
-    if (payloadLength < 1) {
-        VPN_CLIENT_LOGE("❌ 控制消息payload为空");
-        return;
-    }
-
-    // 解析控制命令
-    uint8_t commandType = payload[0];
-    VPN_CLIENT_LOGI("🔍 控制命令类型: 0x%{public}x", commandType);
-
-    switch (commandType) {
-        case 0x01: {  // 保护转发socket (PROTECT_FORWARDING_SOCKET)
-            if (payloadLength < 5) {  // 1字节命令 + 4字节socket FD
-                VPN_CLIENT_LOGE("❌ 保护socket命令参数不足: %{public}d字节 (需要5字节)", payloadLength);
-                return;
-            }
-
-            // 解析socket FD (大端字节序)
-            int32_t sockFd = (payload[1] << 24) | (payload[2] << 16) | (payload[3] << 8) | payload[4];
-            VPN_CLIENT_LOGI("🛡️ [流程跟踪-2] 收到保护转发socket请求: fd=%{public}d (已加入保护队列，等待VPN扩展能力调用protect())", sockFd);
-
-            // 调用ETS层的保护方法
-            ProtectForwardingSocketNative(sockFd);
-            
-            VPN_CLIENT_LOGI("🔍 [流程跟踪-2] socket已加入保护队列: fd=%{public}d (VPN扩展能力应每500ms检查一次)", sockFd);
-            break;
-        }
-
-        default:
-            VPN_CLIENT_LOGE("❌ 未知控制命令类型: 0x%{public}x", commandType);
-            break;
-    }
-}
-
-// 🎯 全局变量：待保护的socket队列
-#include <queue>
-#include <mutex>
-std::queue<int> g_socketsToProtect;
-std::mutex g_socketProtectMutex;
-
-// 🎯 添加socket到保护队列
-void QueueSocketForProtection(int sockFd)
-{
-    std::lock_guard<std::mutex> lock(g_socketProtectMutex);
-    g_socketsToProtect.push(sockFd);
-    VPN_CLIENT_LOGI("📋 已将socket添加到保护队列: fd=%{public}d (队列大小=%{public}zu)",
-                   sockFd, g_socketsToProtect.size());
-}
-
-// 🎯 获取下一个待保护的socket (供ETS层调用)
-int GetNextSocketToProtect()
-{
-    std::lock_guard<std::mutex> lock(g_socketProtectMutex);
-    if (g_socketsToProtect.empty()) {
-        return -1;
-    }
-    int sockFd = g_socketsToProtect.front();
-    g_socketsToProtect.pop();
-    return sockFd;
-}
-
-// 🎯 调用ETS层的socket保护方法
-void ProtectForwardingSocketNative(int sockFd)
-{
-    VPN_CLIENT_LOGI("🔄 将socket加入保护队列: fd=%{public}d", sockFd);
-    QueueSocketForProtection(sockFd);
-}
-
 void HandleReadTunfd(FdInfo fdInfo)
 {
     NETMANAGER_VPN_LOGI("=== TUN READ THREAD STARTED ===");
@@ -447,16 +362,7 @@ void HandleReadTunfd(FdInfo fdInfo)
                         uint16_t srcPort = ntohs(*(uint16_t*)&buffer[20]);
                         uint16_t dstPort = ntohs(*(uint16_t*)&buffer[22]);
 
-                        // 🔥🔥🔥 控制消息识别：目的IP=127.0.0.1 且 目的端口=0
-                        if (strcmp(dstIP, "127.0.0.1") == 0 && dstPort == 0) {
-                            // 🎯 这是控制消息！不转发到服务器，而是本地处理
-                            VPN_CLIENT_LOGI("🎯 检测到控制消息: src=%{public}s:%{public}d dst=%{public}s:%{public}d size=%{public}d",
-                                         srcIP, srcPort, dstIP, dstPort, readResult);
-
-                            // 处理控制消息
-                            HandleControlMessage(buffer, readResult);
-                            continue;  // 跳过转发，控制消息不发送到服务器
-                        }
+                        
 
                         // 🔥 简化：UDP日志在转发时统一记录，这里不重复
 
@@ -1015,13 +921,6 @@ void HandleTcpReceived(FdInfo fdInfo)
                     protocolName = "UDP";
                     srcPort = (buffer[20] << 8) | buffer[21];
                     dstPort = (buffer[22] << 8) | buffer[23];
-                    // 🎯 控制消息识别：服务器->客户端的控制包 (dst=127.0.0.1:0)
-                    if (strcmp(dstIP, "127.0.0.1") == 0 && dstPort == 0) {
-                        VPN_CLIENT_LOGI("🎯 收到控制消息(来自服务器): src=%{public}s:%{public}d dst=%{public}s:%{public}d size=%{public}d",
-                                      srcIP, srcPort, dstIP, dstPort, length);
-                        HandleControlMessage(buffer, static_cast<int>(length));
-                        continue;  // 控制消息不写入TUN
-                    }
                     // 简化：只在每100个响应或前5个时记录
                     if (responseCount <= 5 || responseCount % 100 == 0) {
                         if (srcPort == 53) {
@@ -1498,59 +1397,6 @@ static napi_value IcmpEchoTest(napi_env env, napi_callback_info info)
     return retValue;
 }
 
-// 🔥 新增：保护转发socket的native接口
-static napi_value ProtectForwardingSocket(napi_env env, napi_callback_info info)
-{
-    NETMANAGER_VPN_LOGI("========== ProtectForwardingSocket() 开始执行 ==========");
-
-    size_t argc = 1;
-    napi_value args[1] = {nullptr};
-    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-
-    if (argc < 1) {
-        NETMANAGER_VPN_LOGE("❌ 参数不足: 需要1个参数(sockFd)");
-        napi_value retValue;
-        napi_create_int32(env, -1, &retValue);
-        return retValue;
-    }
-
-    int32_t sockFd;
-    napi_status status = napi_get_value_int32(env, args[0], &sockFd);
-    if (status != napi_ok) {
-        NETMANAGER_VPN_LOGE("❌ 解析sockFd参数失败");
-        napi_value retValue;
-        napi_create_int32(env, -1, &retValue);
-        return retValue;
-    }
-
-    NETMANAGER_VPN_LOGI("🔍 准备保护转发socket: fd=%{public}d", sockFd);
-
-    // 由于我们无法直接访问VpnConnection，这里返回成功
-    // 实际的socket保护将通过ETS层的protectForwardingSocket方法完成
-    NETMANAGER_VPN_LOGI("✅ ProtectForwardingSocket native接口调用完成: fd=%{public}d", sockFd);
-
-    napi_value retValue;
-    napi_create_int32(env, 0, &retValue);
-    return retValue;
-}
-
-// 🔥 新增：获取下一个待保护socket的native接口
-static napi_value GetNextSocketToProtect(napi_env env, napi_callback_info info)
-{
-    NETMANAGER_VPN_LOGI("========== GetNextSocketToProtect() 开始执行 ==========");
-
-    int sockFd = GetNextSocketToProtect();
-
-    if (sockFd >= 0) {
-        NETMANAGER_VPN_LOGI("✅ 返回待保护socket: fd=%{public}d", sockFd);
-    } else {
-        NETMANAGER_VPN_LOGI("📭 没有待保护的socket");
-    }
-
-    napi_value retValue;
-    napi_create_int32(env, sockFd, &retValue);
-    return retValue;
-}
 
 // 🔥 新增：测试代理服务器连接
 EXTERN_C_START
@@ -1561,8 +1407,6 @@ static napi_value Init(napi_env env, napi_value exports)
         {"startVpn", nullptr, StartVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopVpn", nullptr, StopVpn, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"icmpEchoTest", nullptr, IcmpEchoTest, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"protectForwardingSocket", nullptr, ProtectForwardingSocket, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"getNextSocketToProtect", nullptr, GetNextSocketToProtect, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;
